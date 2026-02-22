@@ -1,13 +1,21 @@
+import Foundation
+import AppKit
 import SwiftUI
 
 struct LogViewerView: View {
     @Bindable var viewModel: PodLogsViewModel
+    @State private var isCopyFeedbackVisible = false
+    @State private var copyFeedbackTask: Task<Void, Never>?
 
     var body: some View {
         VStack(spacing: 0) {
             toolbar
             Divider()
             logContent
+        }
+        .onDisappear {
+            copyFeedbackTask?.cancel()
+            copyFeedbackTask = nil
         }
     }
 
@@ -90,6 +98,26 @@ struct LogViewerView: View {
                 viewModel.clearLogs()
             }
 
+            Button {
+                copyVisibleLogsToClipboard()
+            } label: {
+                HStack(spacing: 3) {
+                    Image(systemName: isCopyFeedbackVisible ? "checkmark.circle.fill" : "doc.on.doc")
+                        .font(.system(size: 10))
+                    Text(isCopyFeedbackVisible ? "Copied" : "Copy")
+                        .font(Theme.Fonts.caption)
+                }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(
+                    RoundedRectangle(cornerRadius: Theme.Dimensions.cornerRadius)
+                        .fill(isCopyFeedbackVisible ? Theme.Colors.successBackground : .clear)
+                )
+                .foregroundStyle(isCopyFeedbackVisible ? Theme.Colors.running : Theme.Colors.secondaryText)
+            }
+            .buttonStyle(.plain)
+            .help("Copy visible logs")
+
             // Streaming indicator
             if viewModel.isStreaming {
                 HStack(spacing: 4) {
@@ -159,44 +187,79 @@ struct LogViewerView: View {
     private var logScrollView: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    let lines = viewModel.filteredLogLines
-                    ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
-                        logLineView(line, index: index)
-                            .id(index)
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(alignment: .top, spacing: Theme.Dimensions.spacing) {
+                        Text(lineNumberText)
+                            .font(Theme.Fonts.monoSmall)
+                            .foregroundStyle(Theme.Colors.tertiaryText)
+                            .frame(width: 44, alignment: .trailing)
+                            .textSelection(.disabled)
+
+                        Text(rawLogText)
+                            .font(Theme.Fonts.monoSmall)
+                            .foregroundStyle(.primary)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
+
+                    Color.clear
+                        .frame(height: 1)
+                        .id("log-bottom-anchor")
                 }
                 .padding(.horizontal, Theme.Dimensions.padding)
                 .padding(.vertical, Theme.Dimensions.smallSpacing)
             }
             .onChange(of: viewModel.logLines.count) { _, _ in
                 if viewModel.isFollowing {
-                    let targetIndex = viewModel.filteredLogLines.count - 1
-                    if targetIndex >= 0 {
-                        withAnimation(.easeOut(duration: 0.1)) {
-                            proxy.scrollTo(targetIndex, anchor: .bottom)
-                        }
+                    withAnimation(.easeOut(duration: 0.1)) {
+                        proxy.scrollTo("log-bottom-anchor", anchor: .bottom)
                     }
+                }
+            }
+            .contextMenu {
+                Button("Copy Logs") {
+                    copyVisibleLogsToClipboard()
                 }
             }
         }
     }
 
-    private func logLineView(_ line: String, index: Int) -> some View {
-        HStack(alignment: .top, spacing: Theme.Dimensions.spacing) {
-            // Line number
-            Text("\(index + 1)")
-                .font(Theme.Fonts.monoSmall)
-                .foregroundStyle(Theme.Colors.tertiaryText)
-                .frame(width: 40, alignment: .trailing)
+    private var lineNumberText: String {
+        viewModel.filteredLogLines
+            .enumerated()
+            .map { index, _ in
+                let lineNumber = String(format: "%5d", index + 1)
+                return lineNumber
+            }
+            .joined(separator: "\n")
+    }
 
-            // Log text
-            Text(line)
-                .font(Theme.Fonts.monoSmall)
-                .foregroundStyle(.primary)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
+    private var rawLogText: String {
+        viewModel.filteredLogLines.joined(separator: "\n")
+    }
+
+    private func copyVisibleLogsToClipboard() {
+        guard !rawLogText.isEmpty else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(rawLogText, forType: .string)
+        showCopyFeedback()
+    }
+
+    private func showCopyFeedback() {
+        copyFeedbackTask?.cancel()
+        withAnimation(.easeOut(duration: 0.12)) {
+            isCopyFeedbackVisible = true
         }
-        .padding(.vertical, 1)
+
+        copyFeedbackTask = Task {
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                withAnimation(.easeIn(duration: 0.2)) {
+                    isCopyFeedbackVisible = false
+                }
+            }
+        }
     }
 }

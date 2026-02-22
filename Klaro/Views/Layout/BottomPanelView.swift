@@ -8,6 +8,8 @@ struct BottomPanelView: View {
     @State private var activeLogSessionID: UUID?
     @State private var terminalViewModel = TerminalViewModel()
     @State private var handledPodExecRequestID: UUID?
+    @State private var isHoveringDragHandle = false
+    @State private var isDraggingDragHandle = false
 
     var body: some View {
         @Bindable var appState = appState
@@ -65,11 +67,28 @@ struct BottomPanelView: View {
     private var dragHandle: some View {
         @Bindable var appState = appState
 
-        return Rectangle()
-            .fill(Color.clear)
-            .frame(height: 6)
+        let isHighlighted = isHoveringDragHandle || isDraggingDragHandle
+
+        return ZStack {
+            Rectangle()
+                .fill(Theme.Colors.separator.opacity(isHighlighted ? 0.75 : 0.35))
+                .frame(height: 1)
+                .offset(y: -4)
+
+            Capsule()
+                .fill(isHighlighted ? Theme.Colors.accent.opacity(0.75) : Theme.Colors.separator.opacity(0.6))
+                .frame(width: 42, height: 3)
+                .shadow(color: isHighlighted ? Theme.Colors.accent.opacity(0.25) : .clear, radius: 2, y: 0)
+        }
+        .frame(height: 10)
+        .background(
+            Rectangle()
+                .fill(isHighlighted ? Theme.Colors.accent.opacity(0.08) : .clear)
+        )
+        .animation(.easeOut(duration: 0.12), value: isHighlighted)
             .contentShape(Rectangle())
             .onHover { hovering in
+                isHoveringDragHandle = hovering
                 if hovering {
                     NSCursor.resizeUpDown.push()
                 } else {
@@ -79,11 +98,15 @@ struct BottomPanelView: View {
             .gesture(
                 DragGesture(minimumDistance: 1)
                     .onChanged { value in
+                        isDraggingDragHandle = true
                         let newHeight = appState.bottomPanelHeight - value.translation.height
                         appState.bottomPanelHeight = min(
                             max(newHeight, Theme.Dimensions.bottomPanelMinHeight),
                             Theme.Dimensions.bottomPanelMaxHeight
                         )
+                    }
+                    .onEnded { _ in
+                        isDraggingDragHandle = false
                     }
             )
     }
