@@ -22,7 +22,29 @@ struct MainLayout: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .animation(.easeInOut(duration: 0.2), value: appState.isBottomPanelOpen)
             .overlay {
-                if appState.isDetailPanelOpen {
+                if appState.isYAMLEditorOpen {
+                    ZStack(alignment: .trailing) {
+                        Color.black.opacity(0.001)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                appState.closeYAMLEditor()
+                            }
+
+                        ResizableYAMLEditorView(
+                            initialWidth: appState.yamlEditorWidth,
+                            onResizeEnded: { finalWidth in
+                                var transaction = Transaction()
+                                transaction.disablesAnimations = true
+                                withTransaction(transaction) {
+                                    appState.setYAMLEditorWidth(finalWidth, persist: true)
+                                }
+                            }
+                        )
+                        .zIndex(1)
+                        .shadow(color: .black.opacity(0.25), radius: 8, x: -2, y: 0)
+                        .transition(.move(edge: .trailing))
+                    }
+                } else if appState.isDetailPanelOpen {
                     ZStack(alignment: .trailing) {
                         Color.black.opacity(0.001)
                             .contentShape(Rectangle())
@@ -48,6 +70,7 @@ struct MainLayout: View {
                 }
             }
             .animation(.easeInOut(duration: 0.15), value: appState.isDetailPanelOpen)
+            .animation(.easeInOut(duration: 0.15), value: appState.isYAMLEditorOpen)
         }
         .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 320)
         .toolbar {
@@ -62,7 +85,11 @@ struct MainLayout: View {
                 .help("Reload kubeconfig")
 
                 Button {
-                    appState.isDetailPanelOpen.toggle()
+                    if appState.isYAMLEditorOpen {
+                        appState.closeYAMLEditor()
+                    } else {
+                        appState.isDetailPanelOpen.toggle()
+                    }
                 } label: {
                     Label("Toggle Inspector", systemImage: "sidebar.trailing")
                 }
@@ -83,6 +110,124 @@ struct MainLayout: View {
             }
         }
         .animation(.easeInOut(duration: 0.15), value: appState.isCommandPaletteOpen)
+    }
+}
+
+private struct ResizableYAMLEditorView: View {
+    @Environment(AppState.self) private var appState
+    @Environment(ClusterViewModel.self) private var clusterViewModel
+    let initialWidth: CGFloat
+    let onResizeEnded: (CGFloat) -> Void
+
+    @State private var width: CGFloat
+    @State private var dragStartWidth: CGFloat?
+    @State private var isHoveringResizeHandle = false
+
+    init(initialWidth: CGFloat, onResizeEnded: @escaping (CGFloat) -> Void) {
+        self.initialWidth = initialWidth
+        self.onResizeEnded = onResizeEnded
+        let clampedWidth = min(max(initialWidth, AppState.yamlEditorMinWidth), AppState.yamlEditorMaxWidth)
+        _width = State(initialValue: clampedWidth)
+    }
+
+    var body: some View {
+        @Bindable var appState = appState
+
+        return HStack(spacing: 0) {
+            resizeHandle
+            YAMLEditorView(
+                source: $appState.yamlSource,
+                title: appState.yamlEditorTitle,
+                onClose: {
+                    appState.closeYAMLEditor()
+                },
+                onApply: { yaml in
+                    guard let client = try await clusterViewModel.clientForActiveCluster(appState: appState) else {
+                        throw KubernetesServiceError.operationFailed("No active cluster connection.")
+                    }
+
+                    let service = KubernetesService(client: client)
+                    try await service.applyYAML(
+                        yaml,
+                        originalYAML: appState.yamlOriginalSource,
+                        in: appState.selectedNamespace,
+                        context: appState.activeCluster?.contextName
+                    )
+                    appState.yamlOriginalSource = yaml
+                }
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(.regularMaterial)
+        }
+        .frame(width: width)
+        .glassEffect(.regular, in: Rectangle())
+        .onAppear {
+            width = clamp(initialWidth)
+        }
+        .onDisappear {
+            if isHoveringResizeHandle {
+                NSCursor.pop()
+                isHoveringResizeHandle = false
+            }
+        }
+    }
+
+    private var resizeHandle: some View {
+        ZStack(alignment: .trailing) {
+            Color.clear
+            Rectangle()
+                .fill(Theme.Colors.separator.opacity(0.45))
+                .frame(width: 1)
+        }
+        .frame(width: 8)
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            guard hovering != isHoveringResizeHandle else { return }
+
+            if hovering { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+            isHoveringResizeHandle = hovering
+        }
+        .highPriorityGesture(
+            DragGesture(minimumDistance: 1)
+                .onChanged { value in
+                    if dragStartWidth == nil {
+                        dragStartWidth = width
+                    }
+
+                    guard let startWidth = dragStartWidth else { return }
+                    let proposedWidth = clamp(startWidth - value.translation.width)
+                    let snappedWidth = (proposedWidth / 2).rounded() * 2
+
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) {
+                        width = snappedWidth
+                    }
+                }
+                .onEnded { value in
+                    defer {
+                        dragStartWidth = nil
+                    }
+
+                    guard let startWidth = dragStartWidth else {
+                        onResizeEnded(width)
+                        return
+                    }
+
+                    let proposedWidth = clamp(startWidth - value.translation.width)
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) {
+                        width = proposedWidth
+                    }
+                    onResizeEnded(proposedWidth)
+                }
+        )
+        .accessibilityLabel("Resize YAML editor panel")
+    }
+
+    private func clamp(_ width: CGFloat) -> CGFloat {
+        min(max(width, AppState.yamlEditorMinWidth), AppState.yamlEditorMaxWidth)
     }
 }
 

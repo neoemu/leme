@@ -87,7 +87,11 @@ final class CommandPaletteViewModel {
             category: "Action"
         ) { [weak appState] in
             guard let appState else { return }
-            appState.isDetailPanelOpen.toggle()
+            if appState.isYAMLEditorOpen {
+                appState.closeYAMLEditor()
+            } else {
+                appState.isDetailPanelOpen.toggle()
+            }
             appState.isCommandPaletteOpen = false
         })
 

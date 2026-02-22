@@ -75,7 +75,7 @@ struct BottomPanelView: View {
 
     private var tabBar: some View {
         HStack(spacing: 0) {
-            ForEach([BottomPanelMode.logs, .terminal, .yaml], id: \.self) { mode in
+            ForEach([BottomPanelMode.logs, .terminal], id: \.self) { mode in
                 tabButton(for: mode)
             }
 
@@ -234,7 +234,10 @@ struct BottomPanelView: View {
         case .terminal:
             terminalContent
         case .yaml:
-            yamlContent
+            placeholderContent(
+                icon: "doc.plaintext",
+                text: "YAML editor moved to the side panel"
+            )
         }
     }
 
@@ -280,18 +283,6 @@ struct BottomPanelView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-    }
-
-    // MARK: - YAML Content
-
-    private var yamlContent: some View {
-        @Bindable var appState = appState
-        return YAMLEditorView(
-            source: $appState.yamlSource,
-            onApply: {
-                // Apply action - to be connected to kubectl apply logic later
-            }
-        )
     }
 
     private func placeholderContent(icon: String, text: String) -> some View {

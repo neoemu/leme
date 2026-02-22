@@ -304,84 +304,88 @@ final class ResourceListViewModel {
 
     // MARK: - Download YAML
 
-    func downloadResourceYAML(kind: ResourceKind, name: String, namespace: String?, client: KubernetesClient) async {
+    func fetchResourceYAML(kind: ResourceKind, name: String, namespace: String?, client: KubernetesClient) async throws -> String {
         let service = KubernetesService(client: client)
+
+        switch kind {
+        case .pod:
+            let r = try await service.get(core.v1.Pod.self, name: name, in: namespace)
+            return try await service.getYAML(r)
+        case .deployment:
+            let r = try await service.get(apps.v1.Deployment.self, name: name, in: namespace)
+            return try await service.getYAML(r)
+        case .statefulSet:
+            let r = try await service.get(apps.v1.StatefulSet.self, name: name, in: namespace)
+            return try await service.getYAML(r)
+        case .daemonSet:
+            let r = try await service.get(apps.v1.DaemonSet.self, name: name, in: namespace)
+            return try await service.getYAML(r)
+        case .job:
+            let r = try await service.get(batch.v1.Job.self, name: name, in: namespace)
+            return try await service.getYAML(r)
+        case .cronJob:
+            let r = try await service.get(batch.v1.CronJob.self, name: name, in: namespace)
+            return try await service.getYAML(r)
+        case .replicaSet:
+            let r = try await service.get(apps.v1.ReplicaSet.self, name: name, in: namespace)
+            return try await service.getYAML(r)
+        case .service:
+            let r = try await service.get(core.v1.Service.self, name: name, in: namespace)
+            return try await service.getYAML(r)
+        case .ingress:
+            let r = try await service.get(networking.v1.Ingress.self, name: name, in: namespace)
+            return try await service.getYAML(r)
+        case .configMap:
+            let r = try await service.get(core.v1.ConfigMap.self, name: name, in: namespace)
+            return try await service.getYAML(r)
+        case .secret:
+            let r = try await service.get(core.v1.Secret.self, name: name, in: namespace)
+            return try await service.getYAML(r)
+        case .persistentVolumeClaim:
+            let r = try await service.get(core.v1.PersistentVolumeClaim.self, name: name, in: namespace)
+            return try await service.getYAML(r)
+        case .serviceAccount:
+            let r = try await service.get(core.v1.ServiceAccount.self, name: name, in: namespace)
+            return try await service.getYAML(r)
+        case .endpoint:
+            let r = try await service.get(core.v1.Endpoints.self, name: name, in: namespace)
+            return try await service.getYAML(r)
+        case .networkPolicy:
+            let r = try await service.get(networking.v1.NetworkPolicy.self, name: name, in: namespace)
+            return try await service.getYAML(r)
+        case .role:
+            let r = try await service.get(rbac.v1.Role.self, name: name, in: namespace)
+            return try await service.getYAML(r)
+        case .roleBinding:
+            let r = try await service.get(rbac.v1.RoleBinding.self, name: name, in: namespace)
+            return try await service.getYAML(r)
+        case .event:
+            let r = try await service.get(core.v1.Event.self, name: name, in: namespace)
+            return try await service.getYAML(r)
+        case .node:
+            let r = try await service.getClusterScoped(core.v1.Node.self, name: name)
+            return try await service.getYAML(r)
+        case .namespace:
+            let r = try await service.getClusterScoped(core.v1.Namespace.self, name: name)
+            return try await service.getYAML(r)
+        case .persistentVolume:
+            let r = try await service.getClusterScoped(core.v1.PersistentVolume.self, name: name)
+            return try await service.getYAML(r)
+        case .storageClass:
+            let r = try await service.getClusterScoped(storage.v1.StorageClass.self, name: name)
+            return try await service.getYAML(r)
+        case .clusterRole:
+            let r = try await service.getClusterScoped(rbac.v1.ClusterRole.self, name: name)
+            return try await service.getYAML(r)
+        case .clusterRoleBinding:
+            let r = try await service.getClusterScoped(rbac.v1.ClusterRoleBinding.self, name: name)
+            return try await service.getYAML(r)
+        }
+    }
+
+    func downloadResourceYAML(kind: ResourceKind, name: String, namespace: String?, client: KubernetesClient) async {
         do {
-            let yaml: String
-            switch kind {
-            case .pod:
-                let r = try await service.get(core.v1.Pod.self, name: name, in: namespace)
-                yaml = try await service.getYAML(r)
-            case .deployment:
-                let r = try await service.get(apps.v1.Deployment.self, name: name, in: namespace)
-                yaml = try await service.getYAML(r)
-            case .statefulSet:
-                let r = try await service.get(apps.v1.StatefulSet.self, name: name, in: namespace)
-                yaml = try await service.getYAML(r)
-            case .daemonSet:
-                let r = try await service.get(apps.v1.DaemonSet.self, name: name, in: namespace)
-                yaml = try await service.getYAML(r)
-            case .job:
-                let r = try await service.get(batch.v1.Job.self, name: name, in: namespace)
-                yaml = try await service.getYAML(r)
-            case .cronJob:
-                let r = try await service.get(batch.v1.CronJob.self, name: name, in: namespace)
-                yaml = try await service.getYAML(r)
-            case .replicaSet:
-                let r = try await service.get(apps.v1.ReplicaSet.self, name: name, in: namespace)
-                yaml = try await service.getYAML(r)
-            case .service:
-                let r = try await service.get(core.v1.Service.self, name: name, in: namespace)
-                yaml = try await service.getYAML(r)
-            case .ingress:
-                let r = try await service.get(networking.v1.Ingress.self, name: name, in: namespace)
-                yaml = try await service.getYAML(r)
-            case .configMap:
-                let r = try await service.get(core.v1.ConfigMap.self, name: name, in: namespace)
-                yaml = try await service.getYAML(r)
-            case .secret:
-                let r = try await service.get(core.v1.Secret.self, name: name, in: namespace)
-                yaml = try await service.getYAML(r)
-            case .persistentVolumeClaim:
-                let r = try await service.get(core.v1.PersistentVolumeClaim.self, name: name, in: namespace)
-                yaml = try await service.getYAML(r)
-            case .serviceAccount:
-                let r = try await service.get(core.v1.ServiceAccount.self, name: name, in: namespace)
-                yaml = try await service.getYAML(r)
-            case .endpoint:
-                let r = try await service.get(core.v1.Endpoints.self, name: name, in: namespace)
-                yaml = try await service.getYAML(r)
-            case .networkPolicy:
-                let r = try await service.get(networking.v1.NetworkPolicy.self, name: name, in: namespace)
-                yaml = try await service.getYAML(r)
-            case .role:
-                let r = try await service.get(rbac.v1.Role.self, name: name, in: namespace)
-                yaml = try await service.getYAML(r)
-            case .roleBinding:
-                let r = try await service.get(rbac.v1.RoleBinding.self, name: name, in: namespace)
-                yaml = try await service.getYAML(r)
-            case .event:
-                let r = try await service.get(core.v1.Event.self, name: name, in: namespace)
-                yaml = try await service.getYAML(r)
-            case .node:
-                let r = try await service.getClusterScoped(core.v1.Node.self, name: name)
-                yaml = try await service.getYAML(r)
-            case .namespace:
-                let r = try await service.getClusterScoped(core.v1.Namespace.self, name: name)
-                yaml = try await service.getYAML(r)
-            case .persistentVolume:
-                let r = try await service.getClusterScoped(core.v1.PersistentVolume.self, name: name)
-                yaml = try await service.getYAML(r)
-            case .storageClass:
-                let r = try await service.getClusterScoped(storage.v1.StorageClass.self, name: name)
-                yaml = try await service.getYAML(r)
-            case .clusterRole:
-                let r = try await service.getClusterScoped(rbac.v1.ClusterRole.self, name: name)
-                yaml = try await service.getYAML(r)
-            case .clusterRoleBinding:
-                let r = try await service.getClusterScoped(rbac.v1.ClusterRoleBinding.self, name: name)
-                yaml = try await service.getYAML(r)
-            }
+            let yaml = try await fetchResourceYAML(kind: kind, name: name, namespace: namespace, client: client)
             presentSavePanel(yaml: yaml, fileName: "\(name).yaml")
         } catch {
             deleteError = "Failed to download YAML: \(error.localizedDescription)"

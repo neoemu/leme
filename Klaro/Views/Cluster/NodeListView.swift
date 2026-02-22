@@ -29,8 +29,24 @@ struct NodeListView: View {
             columns: columns,
             viewModel: viewModel,
             onViewYAML: { resource in
-                appState.yamlSource = ""
-                appState.openBottomPanel(mode: .yaml)
+                Task {
+                    guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                    do {
+                        let yaml = try await viewModel.fetchResourceYAML(
+                            kind: .node,
+                            name: resource.name,
+                            namespace: resource.namespace,
+                            client: client
+                        )
+                        appState.showYAMLEditor(resourceID: resource.id, title: "YAML - \(resource.name)", yaml: yaml)
+                    } catch {
+                        appState.showYAMLEditor(
+                            resourceID: resource.id,
+                            title: "YAML - \(resource.name)",
+                            yaml: "# Error loading YAML: \(error.localizedDescription)"
+                        )
+                    }
+                }
             },
             onDelete: { resource in
                 Task {

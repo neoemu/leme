@@ -52,6 +52,7 @@ struct SidebarView: View {
             // Clear resource selection when navigating
             appState.selectedResourceID = nil
             appState.isDetailPanelOpen = false
+            appState.closeYAMLEditor()
         }
     }
 

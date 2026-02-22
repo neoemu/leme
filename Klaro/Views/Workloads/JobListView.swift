@@ -25,8 +25,24 @@ struct JobListView: View {
                 appState.openBottomPanel(mode: .logs)
             },
             onViewYAML: { resource in
-                appState.selectResource(resource.id)
-                appState.openBottomPanel(mode: .yaml)
+                Task {
+                    guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                    do {
+                        let yaml = try await viewModel.fetchResourceYAML(
+                            kind: .job,
+                            name: resource.name,
+                            namespace: resource.namespace,
+                            client: client
+                        )
+                        appState.showYAMLEditor(resourceID: resource.id, title: "YAML - \(resource.name)", yaml: yaml)
+                    } catch {
+                        appState.showYAMLEditor(
+                            resourceID: resource.id,
+                            title: "YAML - \(resource.name)",
+                            yaml: "# Error loading YAML: \(error.localizedDescription)"
+                        )
+                    }
+                }
             },
             onDelete: { resource in
                 Task {

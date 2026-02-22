@@ -12,7 +12,12 @@ final class AppState: @unchecked Sendable {
     static let inspectorDetailDefaultWidth: CGFloat = 420
     static let inspectorDetailMaxWidth: CGFloat = 800
 
+    static let yamlEditorMinWidth: CGFloat = 520
+    static let yamlEditorDefaultWidth: CGFloat = 760
+    static let yamlEditorMaxWidth: CGFloat = 1300
+
     private static let inspectorDetailWidthDefaultsKey = "inspectorDetailWidth"
+    private static let yamlEditorWidthDefaultsKey = "yamlEditorWidth"
 
     var clusters: [ClusterConnection] = []
     var activeClusterID: UUID?
@@ -21,6 +26,9 @@ final class AppState: @unchecked Sendable {
     var selectedResourceID: String?
     var isDetailPanelOpen: Bool = false
     private(set) var inspectorDetailWidth: CGFloat = AppState.loadInspectorDetailWidth()
+    var isYAMLEditorOpen: Bool = false
+    var yamlEditorTitle: String = "YAML Editor"
+    private(set) var yamlEditorWidth: CGFloat = AppState.loadYAMLEditorWidth()
     var isBottomPanelOpen: Bool = false
     var bottomPanelMode: BottomPanelMode = .logs
     var bottomPanelHeight: CGFloat = 250
@@ -37,6 +45,7 @@ final class AppState: @unchecked Sendable {
 
     // YAML editor source
     var yamlSource: String = ""
+    var yamlOriginalSource: String = ""
 
     var activeCluster: ClusterConnection? {
         get {
@@ -89,6 +98,7 @@ final class AppState: @unchecked Sendable {
         sidebarSelection = .dashboard
         selectedResourceID = nil
         isDetailPanelOpen = false
+        isYAMLEditorOpen = false
     }
 
     func selectResource(_ id: String?) {
@@ -97,10 +107,28 @@ final class AppState: @unchecked Sendable {
 
     func showResourceDetail(_ id: String) {
         selectedResourceID = id
+        isYAMLEditorOpen = false
         isDetailPanelOpen = true
     }
 
+    func showYAMLEditor(resourceID: String?, title: String, yaml: String) {
+        if let resourceID {
+            selectedResourceID = resourceID
+        }
+        yamlEditorTitle = title
+        yamlSource = yaml
+        yamlOriginalSource = yaml
+        isBottomPanelOpen = false
+        isDetailPanelOpen = false
+        isYAMLEditorOpen = true
+    }
+
+    func closeYAMLEditor() {
+        isYAMLEditorOpen = false
+    }
+
     func openBottomPanel(mode: BottomPanelMode) {
+        isYAMLEditorOpen = false
         bottomPanelMode = mode
         isBottomPanelOpen = true
     }
@@ -117,6 +145,28 @@ final class AppState: @unchecked Sendable {
         UserDefaults.standard.set(
             Double(clampedWidth),
             forKey: Self.inspectorDetailWidthDefaultsKey
+        )
+    }
+
+    func setYAMLEditorWidth(_ width: CGFloat, persist: Bool = true) {
+        guard width.isFinite, width > 0 else { return }
+
+        let clampedWidth = Self.clampYAMLEditorWidth(width)
+        guard abs(clampedWidth - yamlEditorWidth) >= 0.5 else { return }
+
+        yamlEditorWidth = clampedWidth
+        guard persist else { return }
+
+        UserDefaults.standard.set(
+            Double(clampedWidth),
+            forKey: Self.yamlEditorWidthDefaultsKey
+        )
+    }
+
+    func persistYAMLEditorWidth() {
+        UserDefaults.standard.set(
+            Double(yamlEditorWidth),
+            forKey: Self.yamlEditorWidthDefaultsKey
         )
     }
 
@@ -144,7 +194,22 @@ final class AppState: @unchecked Sendable {
         return clampInspectorDetailWidth(storedWidth)
     }
 
+    private static func loadYAMLEditorWidth() -> CGFloat {
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: yamlEditorWidthDefaultsKey) != nil else {
+            return yamlEditorDefaultWidth
+        }
+
+        let storedWidth = CGFloat(defaults.double(forKey: yamlEditorWidthDefaultsKey))
+        guard storedWidth.isFinite else { return yamlEditorDefaultWidth }
+        return clampYAMLEditorWidth(storedWidth)
+    }
+
     private static func clampInspectorDetailWidth(_ width: CGFloat) -> CGFloat {
         min(max(width, inspectorDetailMinWidth), inspectorDetailMaxWidth)
+    }
+
+    private static func clampYAMLEditorWidth(_ width: CGFloat) -> CGFloat {
+        min(max(width, yamlEditorMinWidth), yamlEditorMaxWidth)
     }
 }

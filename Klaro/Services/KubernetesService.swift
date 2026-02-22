@@ -37,6 +37,31 @@ actor KubernetesService {
 
     // MARK: - Properties
 
+    private struct ManifestIdentity: Equatable {
+        let apiVersion: String
+        let kind: String
+        let name: String
+        let namespace: String?
+    }
+
+    private struct PatchRequest {
+        let patchJSON: String
+        let targetManifestYAML: String
+        let namespace: String?
+    }
+
+    private static let lastAppliedConfigurationAnnotationKey = "kubectl.kubernetes.io/last-applied-configuration"
+    private static let metadataFieldsToStripOnApply: Set<String> = [
+        "creationTimestamp",
+        "resourceVersion",
+        "uid",
+        "selfLink",
+        "generation",
+        "managedFields",
+        "deletionTimestamp",
+        "deletionGracePeriodSeconds",
+    ]
+
     private let client: KubernetesClient
 
     // MARK: - Initialization
@@ -169,6 +194,7 @@ actor KubernetesService {
     func getYAML<R: KubernetesAPIResource & Encodable>(_ resource: R) throws -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
         let jsonData = try encoder.encode(resource)
 
         // Convert JSON to a dictionary, then encode as YAML
@@ -212,99 +238,375 @@ actor KubernetesService {
         }
     }
 
-    /// Parses a YAML string and applies it as a Kubernetes resource.
-    /// This method parses the YAML to determine the kind and then creates or updates accordingly.
-    func applyYAML(_ yamlString: String, in namespace: String? = nil) async throws {
-        // Parse YAML to determine kind and apiVersion
-        guard let node = try Yams.compose(yaml: yamlString),
-              let mapping = node.mapping else {
-            throw KubernetesServiceError.yamlDeserializationFailed("Invalid YAML structure")
+    /// Applies a YAML manifest by preferring a merge-patch of only changed fields.
+    /// Falls back to `kubectl apply -f -` when patch mode cannot be used safely.
+    func applyYAML(
+        _ yamlString: String,
+        originalYAML: String? = nil,
+        in namespace: String? = nil,
+        context: String? = nil
+    ) async throws {
+        if let originalYAML,
+           let patchRequest = try buildPatchRequest(
+               originalYAML: originalYAML,
+               editedYAML: yamlString,
+               fallbackNamespace: namespace
+           ) {
+            var patchArguments = ["patch", "--type", "merge", "--patch", patchRequest.patchJSON, "-f", "-"]
+            if let context, !context.isEmpty {
+                patchArguments.append(contentsOf: ["--context", context])
+            }
+            if let requestNamespace = patchRequest.namespace, !requestNamespace.isEmpty {
+                patchArguments.append(contentsOf: ["-n", requestNamespace])
+            }
+            _ = try executeKubectl(arguments: patchArguments, stdin: patchRequest.targetManifestYAML)
+            return
         }
 
-        guard let kind = mapping[Yams.Node("kind")]?.string else {
-            throw KubernetesServiceError.yamlDeserializationFailed("Missing 'kind' field in YAML")
+        let sanitizedManifest = try sanitizeManifestForApply(yamlString)
+        var applyArguments = ["apply"]
+        if let context, !context.isEmpty {
+            applyArguments.append(contentsOf: ["--context", context])
+        }
+        if let namespace, !namespace.isEmpty {
+            applyArguments.append(contentsOf: ["-n", namespace])
+        }
+        applyArguments.append(contentsOf: ["-f", "-"])
+        _ = try executeKubectl(arguments: applyArguments, stdin: sanitizedManifest)
+    }
+
+    @discardableResult
+    private func executeKubectl(arguments: [String], stdin: String) throws -> String {
+        let kubectlPath = try findKubectl()
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: kubectlPath)
+        process.arguments = arguments
+
+        let stdinPipe = Pipe()
+        let stdoutPipe = Pipe()
+        let stderrPipe = Pipe()
+        process.standardInput = stdinPipe
+        process.standardOutput = stdoutPipe
+        process.standardError = stderrPipe
+
+        var environment = ProcessInfo.processInfo.environment
+        if let existingPath = environment["PATH"] {
+            environment["PATH"] = "/usr/local/bin:/opt/homebrew/bin:\(existingPath)"
+        } else {
+            environment["PATH"] = "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin"
+        }
+        process.environment = environment
+
+        do {
+            try process.run()
+        } catch {
+            throw KubernetesServiceError.operationFailed("Failed to start kubectl: \(error.localizedDescription)")
         }
 
-        // Convert YAML back to JSON for decoding with SwiftkubeModel types
-        let jsonData = try yamlToJSON(yamlString)
-
-        let decoder = JSONDecoder()
-
-        let namespaceSelector: NamespaceSelector = namespace.map { .namespace($0) } ?? .allNamespaces
-
-        switch kind {
-        case "Pod":
-            let resource = try decoder.decode(core.v1.Pod.self, from: jsonData)
-            _ = try await client.pods.create(inNamespace: namespaceSelector, resource)
-        case "Deployment":
-            let resource = try decoder.decode(apps.v1.Deployment.self, from: jsonData)
-            _ = try await client.appsV1.deployments.create(inNamespace: namespaceSelector, resource)
-        case "Service":
-            let resource = try decoder.decode(core.v1.Service.self, from: jsonData)
-            _ = try await client.services.create(inNamespace: namespaceSelector, resource)
-        case "ConfigMap":
-            let resource = try decoder.decode(core.v1.ConfigMap.self, from: jsonData)
-            _ = try await client.configMaps.create(inNamespace: namespaceSelector, resource)
-        case "Secret":
-            let resource = try decoder.decode(core.v1.Secret.self, from: jsonData)
-            _ = try await client.secrets.create(inNamespace: namespaceSelector, resource)
-        case "Namespace":
-            let resource = try decoder.decode(core.v1.Namespace.self, from: jsonData)
-            _ = try await client.namespaces.create(resource)
-        case "StatefulSet":
-            let resource = try decoder.decode(apps.v1.StatefulSet.self, from: jsonData)
-            _ = try await client.appsV1.statefulSets.create(inNamespace: namespaceSelector, resource)
-        case "DaemonSet":
-            let resource = try decoder.decode(apps.v1.DaemonSet.self, from: jsonData)
-            _ = try await client.appsV1.daemonSets.create(inNamespace: namespaceSelector, resource)
-        case "Job":
-            let resource = try decoder.decode(batch.v1.Job.self, from: jsonData)
-            _ = try await client.batchV1.jobs.create(inNamespace: namespaceSelector, resource)
-        case "CronJob":
-            let resource = try decoder.decode(batch.v1.CronJob.self, from: jsonData)
-            _ = try await client.batchV1.cronJobs.create(inNamespace: namespaceSelector, resource)
-        case "Ingress":
-            let resource = try decoder.decode(networking.v1.Ingress.self, from: jsonData)
-            _ = try await client.networkingV1.ingresses.create(inNamespace: namespaceSelector, resource)
-        case "NetworkPolicy":
-            let resource = try decoder.decode(networking.v1.NetworkPolicy.self, from: jsonData)
-            _ = try await client.networkingV1.networkPolicies.create(inNamespace: namespaceSelector, resource)
-        case "ServiceAccount":
-            let resource = try decoder.decode(core.v1.ServiceAccount.self, from: jsonData)
-            _ = try await client.serviceAccounts.create(inNamespace: namespaceSelector, resource)
-        case "Role":
-            let resource = try decoder.decode(rbac.v1.Role.self, from: jsonData)
-            _ = try await client.rbacV1.roles.create(inNamespace: namespaceSelector, resource)
-        case "ClusterRole":
-            let resource = try decoder.decode(rbac.v1.ClusterRole.self, from: jsonData)
-            _ = try await client.rbacV1.clusterRoles.create(resource)
-        case "RoleBinding":
-            let resource = try decoder.decode(rbac.v1.RoleBinding.self, from: jsonData)
-            _ = try await client.rbacV1.roleBindings.create(inNamespace: namespaceSelector, resource)
-        case "ClusterRoleBinding":
-            let resource = try decoder.decode(rbac.v1.ClusterRoleBinding.self, from: jsonData)
-            _ = try await client.rbacV1.clusterRoleBindings.create(resource)
-        case "PersistentVolumeClaim":
-            let resource = try decoder.decode(core.v1.PersistentVolumeClaim.self, from: jsonData)
-            _ = try await client.persistentVolumeClaims.create(inNamespace: namespaceSelector, resource)
-        case "PersistentVolume":
-            let resource = try decoder.decode(core.v1.PersistentVolume.self, from: jsonData)
-            _ = try await client.persistentVolumes.create(resource)
-        default:
-            throw KubernetesServiceError.unsupportedResourceKind(kind)
+        if let inputData = stdin.data(using: .utf8) {
+            stdinPipe.fileHandleForWriting.write(inputData)
         }
+        try? stdinPipe.fileHandleForWriting.close()
+
+        process.waitUntilExit()
+
+        let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+        let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+        let stdout = String(data: stdoutData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let stderr = String(data: stderrData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        guard process.terminationStatus == 0 else {
+            let detail = stderr.isEmpty ? stdout : stderr
+            throw KubernetesServiceError.operationFailed(
+                detail.isEmpty
+                    ? "kubectl command failed with exit code \(process.terminationStatus)"
+                    : detail
+            )
+        }
+
+        return stdout
+    }
+
+    private func findKubectl() throws -> String {
+        let commonPaths = [
+            "/usr/local/bin/kubectl",
+            "/opt/homebrew/bin/kubectl",
+            "/usr/bin/kubectl",
+            "/opt/local/bin/kubectl",
+        ]
+
+        for path in commonPaths where FileManager.default.isExecutableFile(atPath: path) {
+            return path
+        }
+
+        let whichProcess = Process()
+        let whichPipe = Pipe()
+        whichProcess.executableURL = URL(fileURLWithPath: "/usr/bin/which")
+        whichProcess.arguments = ["kubectl"]
+        whichProcess.standardOutput = whichPipe
+        whichProcess.standardError = FileHandle.nullDevice
+
+        do {
+            try whichProcess.run()
+            whichProcess.waitUntilExit()
+
+            if whichProcess.terminationStatus == 0 {
+                let data = whichPipe.fileHandleForReading.readDataToEndOfFile()
+                if let path = String(data: data, encoding: .utf8)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines),
+                   !path.isEmpty {
+                    return path
+                }
+            }
+        } catch {
+            // fall through to error
+        }
+
+        throw KubernetesServiceError.operationFailed(
+            "kubectl not found. Install kubectl and ensure it is in PATH."
+        )
     }
 
     // MARK: - Private Helpers
 
-    /// Converts a YAML string to JSON Data.
-    private func yamlToJSON(_ yamlString: String) throws -> Data {
-        guard let yamlNode = try Yams.compose(yaml: yamlString) else {
-            throw KubernetesServiceError.yamlDeserializationFailed("Failed to compose YAML node")
+    /// Removes server-managed fields that commonly make `kubectl apply -f -` fail
+    /// when the manifest originates from a GET response.
+    private func sanitizeManifestForApply(_ yamlString: String) throws -> String {
+        let nodes = Array(try Yams.compose_all(yaml: yamlString))
+        guard !nodes.isEmpty else {
+            return yamlString
         }
 
-        let jsonObject = yamlNodeToJSONObject(yamlNode)
-        return try JSONSerialization.data(withJSONObject: jsonObject)
+        let sanitizedDocuments: [String] = try nodes.map { node in
+            let jsonObject = yamlNodeToJSONObject(node)
+            let cleaned = pruneKubernetesNoiseForApply(in: jsonObject)
+            let sanitized = sanitizeForYams(cleaned)
+            return try Yams.dump(object: sanitized, allowUnicode: true, sortKeys: true)
+        }
+
+        return sanitizedDocuments.joined(separator: "\n---\n")
+    }
+
+    /// Recursively strips noisy/immutable fields from Kubernetes objects.
+    private func pruneKubernetesNoiseForApply(in value: Any) -> Any {
+        switch value {
+        case var dict as [String: Any]:
+            for (key, nestedValue) in dict {
+                dict[key] = pruneKubernetesNoiseForApply(in: nestedValue)
+            }
+
+            dict.removeValue(forKey: "status")
+
+            if var metadata = dict["metadata"] as? [String: Any] {
+                for key in Self.metadataFieldsToStripOnApply {
+                    metadata.removeValue(forKey: key)
+                }
+
+                if var annotations = metadata["annotations"] as? [String: Any] {
+                    annotations.removeValue(forKey: Self.lastAppliedConfigurationAnnotationKey)
+                    if annotations.isEmpty {
+                        metadata.removeValue(forKey: "annotations")
+                    } else {
+                        metadata["annotations"] = annotations
+                    }
+                }
+
+                dict["metadata"] = metadata
+            }
+
+            return dict
+        case let array as [Any]:
+            return array.map { pruneKubernetesNoiseForApply(in: $0) }
+        default:
+            return value
+        }
+    }
+
+    /// Builds a merge-patch request from original and edited YAML manifests.
+    /// Returns nil when patch mode cannot be safely used (for example multi-doc edits).
+    private func buildPatchRequest(
+        originalYAML: String,
+        editedYAML: String,
+        fallbackNamespace: String?
+    ) throws -> PatchRequest? {
+        let originalDocuments = try parseYAMLDocuments(originalYAML)
+        let editedDocuments = try parseYAMLDocuments(editedYAML)
+
+        guard originalDocuments.count == 1, editedDocuments.count == 1 else {
+            return nil
+        }
+
+        let cleanedOriginalAny = pruneKubernetesNoiseForApply(in: originalDocuments[0])
+        let cleanedEditedAny = pruneKubernetesNoiseForApply(in: editedDocuments[0])
+
+        guard let cleanedOriginal = cleanedOriginalAny as? [String: Any],
+              let cleanedEdited = cleanedEditedAny as? [String: Any] else {
+            return nil
+        }
+
+        guard let originalIdentity = manifestIdentity(from: cleanedOriginal),
+              let editedIdentity = manifestIdentity(from: cleanedEdited),
+              originalIdentity == editedIdentity else {
+            return nil
+        }
+
+        guard var patchObject = mergePatchDiff(from: cleanedOriginal, to: cleanedEdited) as? [String: Any] else {
+            throw KubernetesServiceError.operationFailed("No changes to apply.")
+        }
+
+        patchObject.removeValue(forKey: "apiVersion")
+        patchObject.removeValue(forKey: "kind")
+
+        if var metadataPatch = patchObject["metadata"] as? [String: Any] {
+            metadataPatch.removeValue(forKey: "name")
+            metadataPatch.removeValue(forKey: "namespace")
+            if metadataPatch.isEmpty {
+                patchObject.removeValue(forKey: "metadata")
+            } else {
+                patchObject["metadata"] = metadataPatch
+            }
+        }
+
+        guard !patchObject.isEmpty else {
+            throw KubernetesServiceError.operationFailed("No changes to apply.")
+        }
+
+        let patchData = try JSONSerialization.data(withJSONObject: patchObject)
+        guard let patchJSON = String(data: patchData, encoding: .utf8) else {
+            throw KubernetesServiceError.operationFailed("Failed to encode patch payload.")
+        }
+
+        let requestNamespace: String?
+        if let manifestNamespace = editedIdentity.namespace, !manifestNamespace.isEmpty {
+            requestNamespace = manifestNamespace
+        } else if originalIdentity.namespace != nil {
+            requestNamespace = fallbackNamespace
+        } else {
+            requestNamespace = nil
+        }
+        var targetMetadata: [String: Any] = ["name": editedIdentity.name]
+        if let requestNamespace, !requestNamespace.isEmpty {
+            targetMetadata["namespace"] = requestNamespace
+        }
+        let targetManifest: [String: Any] = [
+            "apiVersion": editedIdentity.apiVersion,
+            "kind": editedIdentity.kind,
+            "metadata": targetMetadata,
+        ]
+        let targetManifestYAML = try Yams.dump(object: sanitizeForYams(targetManifest), allowUnicode: true, sortKeys: true)
+
+        return PatchRequest(
+            patchJSON: patchJSON,
+            targetManifestYAML: targetManifestYAML,
+            namespace: requestNamespace
+        )
+    }
+
+    private func parseYAMLDocuments(_ yamlString: String) throws -> [[String: Any]] {
+        let nodes = Array(try Yams.compose_all(yaml: yamlString))
+        guard !nodes.isEmpty else { return [] }
+
+        var documents: [[String: Any]] = []
+        for node in nodes {
+            let object = yamlNodeToJSONObject(node)
+            if let mapping = object as? [String: Any] {
+                documents.append(mapping)
+            }
+        }
+        return documents
+    }
+
+    private func manifestIdentity(from document: [String: Any]) -> ManifestIdentity? {
+        guard let apiVersion = document["apiVersion"] as? String,
+              let kind = document["kind"] as? String,
+              let metadata = document["metadata"] as? [String: Any],
+              let name = metadata["name"] as? String else {
+            return nil
+        }
+
+        return ManifestIdentity(
+            apiVersion: apiVersion,
+            kind: kind,
+            name: name,
+            namespace: metadata["namespace"] as? String
+        )
+    }
+
+    private func mergePatchDiff(from original: Any, to updated: Any) -> Any? {
+        switch (original, updated) {
+        case let (originalDict as [String: Any], updatedDict as [String: Any]):
+            var patch: [String: Any] = [:]
+            let keys = Set(originalDict.keys).union(updatedDict.keys)
+
+            for key in keys {
+                let oldValue = originalDict[key]
+                let newValue = updatedDict[key]
+
+                switch (oldValue, newValue) {
+                case (_?, nil):
+                    patch[key] = NSNull()
+                case (nil, let newValue?):
+                    patch[key] = newValue
+                case (let oldValue?, let newValue?):
+                    if let nestedDiff = mergePatchDiff(from: oldValue, to: newValue) {
+                        patch[key] = nestedDiff
+                    }
+                case (nil, nil):
+                    break
+                }
+            }
+
+            return patch.isEmpty ? nil : patch
+
+        case let (originalArray as [Any], updatedArray as [Any]):
+            return valuesDeepEqual(originalArray, updatedArray) ? nil : updatedArray
+
+        default:
+            return valuesDeepEqual(original, updated) ? nil : updated
+        }
+    }
+
+    private func valuesDeepEqual(_ lhs: Any, _ rhs: Any) -> Bool {
+        switch (lhs, rhs) {
+        case (is NSNull, is NSNull):
+            return true
+        case let (left as [String: Any], right as [String: Any]):
+            guard left.count == right.count else { return false }
+            for (key, leftValue) in left {
+                guard let rightValue = right[key], valuesDeepEqual(leftValue, rightValue) else {
+                    return false
+                }
+            }
+            return true
+        case let (left as [Any], right as [Any]):
+            guard left.count == right.count else { return false }
+            for (leftValue, rightValue) in zip(left, right) {
+                if !valuesDeepEqual(leftValue, rightValue) {
+                    return false
+                }
+            }
+            return true
+        case let (left as NSNumber, right as NSNumber):
+            if CFGetTypeID(left) == CFBooleanGetTypeID() || CFGetTypeID(right) == CFBooleanGetTypeID() {
+                return left.boolValue == right.boolValue
+            }
+            return left == right
+        case let (left as String, right as String):
+            return left == right
+        case let (left as Bool, right as Bool):
+            return left == right
+        case let (left as Int, right as Int):
+            return left == right
+        case let (left as Double, right as Double):
+            return left == right
+        case let (left as Int, right as Double):
+            return Double(left) == right
+        case let (left as Double, right as Int):
+            return left == Double(right)
+        default:
+            return false
+        }
     }
 
     /// Recursively converts a Yams Node to a JSON-compatible object.

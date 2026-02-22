@@ -45,7 +45,11 @@ struct AppCommands: Commands {
             Divider()
 
             Button("Toggle Detail Panel") {
-                appState.isDetailPanelOpen.toggle()
+                if appState.isYAMLEditorOpen {
+                    appState.closeYAMLEditor()
+                } else {
+                    appState.isDetailPanelOpen.toggle()
+                }
             }
             .keyboardShortcut(KeyboardShortcuts.detailPanel, modifiers: [.command, .shift])
 
