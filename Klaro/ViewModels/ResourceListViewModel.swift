@@ -4,6 +4,62 @@ import SwiftkubeClient
 import SwiftkubeModel
 import UniformTypeIdentifiers
 
+enum PodStatusFormatter {
+    static func readySummary(for pod: core.v1.Pod) -> (ready: Int, total: Int) {
+        let containerStatuses = pod.status?.containerStatuses ?? []
+        let ready = containerStatuses.filter(\.ready).count
+        let declaredTotal = pod.spec?.containers.count ?? 0
+        let observedTotal = containerStatuses.count
+        let total = max(declaredTotal, observedTotal)
+        return (ready, total)
+    }
+
+    static func restartCount(for pod: core.v1.Pod) -> Int {
+        let containerStatuses = pod.status?.containerStatuses ?? []
+        return containerStatuses.reduce(0) { $0 + Int($1.restartCount) }
+    }
+
+    static func displayStatus(for pod: core.v1.Pod) -> String {
+        if pod.metadata?.deletionTimestamp != nil {
+            return "Terminating"
+        }
+
+        let phase = pod.status?.phase ?? "Unknown"
+        let initStatuses = pod.status?.initContainerStatuses ?? []
+        let containerStatuses = pod.status?.containerStatuses ?? []
+        let readiness = readySummary(for: pod)
+
+        for status in initStatuses {
+            if let waiting = status.state?.waiting?.reason, !waiting.isEmpty {
+                return "Init:\(waiting)"
+            }
+            if let terminated = status.state?.terminated, terminated.exitCode != 0 {
+                let reason = terminated.reason ?? "Error"
+                return "Init:\(reason)"
+            }
+        }
+
+        if let waitingReason = containerStatuses
+            .compactMap({ $0.state?.waiting?.reason })
+            .first(where: { !$0.isEmpty }) {
+            return waitingReason
+        }
+
+        if phase == "Running", readiness.total > 0, readiness.ready < readiness.total {
+            return "NotReady"
+        }
+
+        if let terminatedReason = containerStatuses
+            .compactMap({ $0.state?.terminated?.reason })
+            .first(where: { !$0.isEmpty }),
+           phase != "Succeeded" {
+            return terminatedReason
+        }
+
+        return phase
+    }
+}
+
 struct ResourceItem: Identifiable, Sendable, Hashable {
     let id: String
     let name: String
@@ -14,14 +70,6 @@ struct ResourceItem: Identifiable, Sendable, Hashable {
     let annotations: [String: String]
     let kind: ResourceKind
     var extraColumns: [String: String] = [:]
-
-    static func == (lhs: ResourceItem, rhs: ResourceItem) -> Bool {
-        lhs.id == rhs.id
-    }
-
-    func hash(into hasher: inout Hasher) {
-        hasher.combine(id)
-    }
 }
 
 enum SortField: String, Sendable {
@@ -39,6 +87,12 @@ enum SortOrder: Sendable {
 @Observable
 @MainActor
 final class ResourceListViewModel {
+    private struct LiveWatchContext: Equatable {
+        let kind: ResourceKind
+        let namespace: String?
+        let clientIdentity: ObjectIdentifier
+    }
+
     var resources: [ResourceItem] = []
     var isLoading = false
     var errorMessage: String?
@@ -53,7 +107,16 @@ final class ResourceListViewModel {
     var scaleError: String?
     var showScaleError = false
 
+    private static let liveReloadDebounceNanoseconds: UInt64 = 250_000_000
+    private static let livePollingIntervalNanoseconds: UInt64 = 1_500_000_000
+
+    private var watcher: ResourceWatcher?
     private var watchTask: Task<Void, Never>?
+    private var watchDebounceTask: Task<Void, Never>?
+    private var watchPollingTask: Task<Void, Never>?
+    private var liveWatchContext: LiveWatchContext?
+    private var watchReloadAction: (@MainActor () async -> Void)?
+    private var isPerformingLiveReload = false
 
     var filteredResources: [ResourceItem] {
         var result = resources
@@ -94,35 +157,19 @@ final class ResourceListViewModel {
     // MARK: - Pod Loading
 
     func loadPods(client: KubernetesClient, namespace: String?) async {
-        isLoading = true
-        errorMessage = nil
-        do {
-            let service = KubernetesService(client: client)
-            let podList = try await service.list(core.v1.Pod.self, in: namespace)
-            resources = podList.items.map { pod in
-                podToResourceItem(pod)
-            }
-        } catch {
-            errorMessage = error.localizedDescription
+        await loadPodsSnapshot(client: client, namespace: namespace, showLoading: true)
+        configureLiveWatch(kind: .pod, client: client, namespace: namespace) { [weak self] in
+            await self?.loadPodsSnapshot(client: client, namespace: namespace, showLoading: false)
         }
-        isLoading = false
     }
 
     // MARK: - Deployment Loading
 
     func loadDeployments(client: KubernetesClient, namespace: String?) async {
-        isLoading = true
-        errorMessage = nil
-        do {
-            let service = KubernetesService(client: client)
-            let list = try await service.list(apps.v1.Deployment.self, in: namespace)
-            resources = list.items.map { deploy in
-                deploymentToResourceItem(deploy)
-            }
-        } catch {
-            errorMessage = error.localizedDescription
+        await loadDeploymentsSnapshot(client: client, namespace: namespace, showLoading: true)
+        configureLiveWatch(kind: .deployment, client: client, namespace: namespace) { [weak self] in
+            await self?.loadDeploymentsSnapshot(client: client, namespace: namespace, showLoading: false)
         }
-        isLoading = false
     }
 
     // MARK: - Generic Namespaced Loading
@@ -134,16 +181,22 @@ final class ResourceListViewModel {
         namespace: String?,
         mapper: @Sendable @escaping (R) -> ResourceItem
     ) async where R.List.Item == R {
-        isLoading = true
-        errorMessage = nil
-        do {
-            let service = KubernetesService(client: client)
-            let list = try await service.list(type, in: namespace)
-            resources = list.items.map(mapper)
-        } catch {
-            errorMessage = error.localizedDescription
+        await loadNamespacedResourcesSnapshot(
+            type,
+            client: client,
+            namespace: namespace,
+            mapper: mapper,
+            showLoading: true
+        )
+        configureLiveWatch(kind: kind, client: client, namespace: namespace) { [weak self] in
+            await self?.loadNamespacedResourcesSnapshot(
+                type,
+                client: client,
+                namespace: namespace,
+                mapper: mapper,
+                showLoading: false
+            )
         }
-        isLoading = false
     }
 
     // MARK: - Generic Cluster-Scoped Loading
@@ -154,7 +207,92 @@ final class ResourceListViewModel {
         client: KubernetesClient,
         mapper: @Sendable @escaping (R) -> ResourceItem
     ) async where R.List.Item == R {
-        isLoading = true
+        await loadClusterScopedResourcesSnapshot(
+            type,
+            client: client,
+            mapper: mapper,
+            showLoading: true
+        )
+        configureLiveWatch(kind: kind, client: client, namespace: nil) { [weak self] in
+            await self?.loadClusterScopedResourcesSnapshot(
+                type,
+                client: client,
+                mapper: mapper,
+                showLoading: false
+            )
+        }
+    }
+
+    private func loadPodsSnapshot(client: KubernetesClient, namespace: String?, showLoading: Bool) async {
+        if showLoading {
+            isLoading = true
+        }
+        errorMessage = nil
+        do {
+            let service = KubernetesService(client: client)
+            let podList = try await service.list(core.v1.Pod.self, in: namespace)
+            resources = podList.items.map { pod in
+                podToResourceItem(pod)
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        if showLoading {
+            isLoading = false
+        }
+    }
+
+    private func loadDeploymentsSnapshot(client: KubernetesClient, namespace: String?, showLoading: Bool) async {
+        if showLoading {
+            isLoading = true
+        }
+        errorMessage = nil
+        do {
+            let service = KubernetesService(client: client)
+            let list = try await service.list(apps.v1.Deployment.self, in: namespace)
+            resources = list.items.map { deploy in
+                deploymentToResourceItem(deploy)
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        if showLoading {
+            isLoading = false
+        }
+    }
+
+    private func loadNamespacedResourcesSnapshot<R: KubernetesAPIResource & NamespacedResource & ListableResource>(
+        _ type: R.Type,
+        client: KubernetesClient,
+        namespace: String?,
+        mapper: @Sendable @escaping (R) -> ResourceItem,
+        showLoading: Bool
+    ) async where R.List.Item == R {
+        if showLoading {
+            isLoading = true
+        }
+        errorMessage = nil
+        do {
+            let service = KubernetesService(client: client)
+            let list = try await service.list(type, in: namespace)
+            resources = list.items.map(mapper)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        if showLoading {
+            isLoading = false
+        }
+    }
+
+    private func loadClusterScopedResourcesSnapshot<R: KubernetesAPIResource & ClusterScopedResource & ListableResource>(
+        _ type: R.Type,
+        client: KubernetesClient,
+        mapper: @Sendable @escaping (R) -> ResourceItem,
+        showLoading: Bool
+    ) async where R.List.Item == R {
+        if showLoading {
+            isLoading = true
+        }
         errorMessage = nil
         do {
             let service = KubernetesService(client: client)
@@ -163,37 +301,114 @@ final class ResourceListViewModel {
         } catch {
             errorMessage = error.localizedDescription
         }
-        isLoading = false
+        if showLoading {
+            isLoading = false
+        }
     }
 
     // MARK: - Watch
 
-    func startWatch(kind: ResourceKind, client: KubernetesClient, namespace: String?) {
+    private func configureLiveWatch(
+        kind: ResourceKind,
+        client: KubernetesClient,
+        namespace: String?,
+        onReload: @escaping @MainActor () async -> Void
+    ) {
+        let context = LiveWatchContext(
+            kind: kind,
+            namespace: namespace,
+            clientIdentity: ObjectIdentifier(client)
+        )
+
+        if liveWatchContext == context {
+            watchReloadAction = onReload
+            return
+        }
+
         stopWatch()
+
+        liveWatchContext = context
+        watchReloadAction = onReload
         let watcher = ResourceWatcher(client: client)
+        self.watcher = watcher
+
         watchTask = Task { [weak self] in
             let stream = await watcher.watch(kind: kind, in: namespace)
             for await event in stream {
                 guard !Task.isCancelled else { break }
-                await self?.handleWatchEvent(event, kind: kind, client: client, namespace: namespace)
+                await self?.handleWatchEvent(event)
             }
         }
+
+        startLivePolling()
     }
 
     func stopWatch() {
         watchTask?.cancel()
         watchTask = nil
+        watchDebounceTask?.cancel()
+        watchDebounceTask = nil
+        watchPollingTask?.cancel()
+        watchPollingTask = nil
+
+        if let watcher {
+            Task {
+                await watcher.stopAll()
+            }
+        }
+        watcher = nil
+        liveWatchContext = nil
+        watchReloadAction = nil
+        isPerformingLiveReload = false
     }
 
-    private func handleWatchEvent(_ event: ResourceWatchEvent, kind: ResourceKind, client: KubernetesClient, namespace: String?) async {
-        // On any change, reload the resource list for simplicity
-        switch kind {
-        case .pod:
-            await loadPods(client: client, namespace: namespace)
-        case .deployment:
-            await loadDeployments(client: client, namespace: namespace)
-        default:
-            break
+    private func handleWatchEvent(_ event: ResourceWatchEvent) async {
+        if event.type == .error {
+            return
+        }
+
+        applyImmediateWatchMutation(event)
+        scheduleLiveReload()
+    }
+
+    private func scheduleLiveReload() {
+        watchDebounceTask?.cancel()
+        watchDebounceTask = Task { [weak self] in
+            guard let self else { return }
+            try? await Task.sleep(nanoseconds: Self.liveReloadDebounceNanoseconds)
+            guard !Task.isCancelled else { return }
+            await self.performLiveReloadIfNeeded()
+        }
+    }
+
+    private func startLivePolling() {
+        watchPollingTask?.cancel()
+        watchPollingTask = Task { [weak self] in
+            guard let self else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: Self.livePollingIntervalNanoseconds)
+                guard !Task.isCancelled else { break }
+                await self.performLiveReloadIfNeeded()
+            }
+        }
+    }
+
+    private func performLiveReloadIfNeeded() async {
+        guard !isPerformingLiveReload, let watchReloadAction else { return }
+        isPerformingLiveReload = true
+        defer { isPerformingLiveReload = false }
+        await watchReloadAction()
+    }
+
+    private func applyImmediateWatchMutation(_ event: ResourceWatchEvent) {
+        guard event.type == .deleted else { return }
+        let eventNamespace = event.resourceNamespace ?? ""
+
+        resources.removeAll { item in
+            let itemNamespace = item.namespace ?? ""
+            return item.kind == event.resourceKind &&
+                item.name == event.resourceName &&
+                itemNamespace == eventNamespace
         }
     }
 
@@ -412,14 +627,12 @@ final class ResourceListViewModel {
     // MARK: - Resource Mappers
 
     private nonisolated func podToResourceItem(_ pod: core.v1.Pod) -> ResourceItem {
-        let phase = pod.status?.phase ?? "Unknown"
-        let containerStatuses = pod.status?.containerStatuses ?? []
-        let restarts = containerStatuses.reduce(0) { $0 + Int($1.restartCount) }
-        let readyCount = containerStatuses.filter { $0.ready }.count
-        let totalCount = containerStatuses.count
+        let restarts = PodStatusFormatter.restartCount(for: pod)
+        let readiness = PodStatusFormatter.readySummary(for: pod)
+        let status = PodStatusFormatter.displayStatus(for: pod)
 
         var extra: [String: String] = [:]
-        extra["ready"] = "\(readyCount)/\(totalCount)"
+        extra["ready"] = "\(readiness.ready)/\(readiness.total)"
         extra["restarts"] = "\(restarts)"
         extra["node"] = pod.spec?.nodeName ?? ""
         extra["ip"] = pod.status?.podIP ?? ""
@@ -428,7 +641,7 @@ final class ResourceListViewModel {
             id: "\(pod.metadata?.namespace ?? "")/\(pod.name ?? "")",
             name: pod.name ?? "",
             namespace: pod.metadata?.namespace,
-            status: phase,
+            status: status,
             age: pod.metadata?.creationTimestamp,
             labels: pod.metadata?.labels ?? [:],
             annotations: pod.metadata?.annotations ?? [:],

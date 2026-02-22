@@ -10,6 +10,11 @@ struct NodeListView: View {
     @State private var nodeCapacities: [String: MetricsService.NodeCapacity] = [:]
     @State private var podCountsByNode: [String: Int] = [:]
     @State private var resourceRequestsByNode: [String: MetricsService.NodeResourceUsage] = [:]
+    @State private var nodeWatcher: ResourceWatcher?
+    @State private var nodeWatchTasks: [Task<Void, Never>] = []
+    @State private var nodeLiveReloadTask: Task<Void, Never>?
+    @State private var periodicRefreshTask: Task<Void, Never>?
+    @State private var isLiveReloading = false
 
     private let columns: [ResourceTableColumn] = [
         ResourceTableColumn(title: "State", key: "status", width: 80, sortField: .status),
@@ -71,6 +76,16 @@ struct NodeListView: View {
         }
         .task {
             await loadData()
+            await startLiveUpdates()
+        }
+        .onChange(of: appState.activeClusterID) { _, _ in
+            Task {
+                await loadData()
+                await startLiveUpdates()
+            }
+        }
+        .onDisappear {
+            stopLiveUpdates()
         }
     }
 
@@ -162,7 +177,13 @@ struct NodeListView: View {
 
     // MARK: - Data Loading
 
-    private func loadData() async {
+    private func loadData(showLoading: Bool = true) async {
+        if !showLoading {
+            guard !isLiveReloading else { return }
+            isLiveReloading = true
+            defer { isLiveReloading = false }
+        }
+
         guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else {
             return
         }
@@ -171,7 +192,9 @@ struct NodeListView: View {
         let metricsService = MetricsService(client: client)
 
         // Load nodes
-        viewModel.isLoading = true
+        if showLoading {
+            viewModel.isLoading = true
+        }
         viewModel.errorMessage = nil
 
         do {
@@ -192,7 +215,9 @@ struct NodeListView: View {
         } catch {
             viewModel.errorMessage = error.localizedDescription
         }
-        viewModel.isLoading = false
+        if showLoading {
+            viewModel.isLoading = false
+        }
 
         // Load pod counts and resource requests in parallel
         async let podCounts = metricsService.podCountByNode()
@@ -200,6 +225,65 @@ struct NodeListView: View {
 
         podCountsByNode = await podCounts
         resourceRequestsByNode = await resourceRequests
+    }
+
+    private func startLiveUpdates() async {
+        stopLiveUpdates()
+
+        guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else {
+            return
+        }
+
+        let watcher = ResourceWatcher(client: client)
+        nodeWatcher = watcher
+
+        for kind in [ResourceKind.node, .pod] {
+            let task = Task {
+                let stream = await watcher.watch(kind: kind, in: nil)
+                for await event in stream {
+                    guard !Task.isCancelled else { break }
+                    guard event.type != .error else { continue }
+                    await MainActor.run {
+                        scheduleLiveReload()
+                    }
+                }
+            }
+            nodeWatchTasks.append(task)
+        }
+
+        periodicRefreshTask = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                guard !Task.isCancelled else { break }
+                await loadData(showLoading: false)
+            }
+        }
+    }
+
+    private func scheduleLiveReload() {
+        nodeLiveReloadTask?.cancel()
+        nodeLiveReloadTask = Task {
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            guard !Task.isCancelled else { return }
+            await loadData(showLoading: false)
+        }
+    }
+
+    private func stopLiveUpdates() {
+        nodeWatchTasks.forEach { $0.cancel() }
+        nodeWatchTasks.removeAll()
+
+        nodeLiveReloadTask?.cancel()
+        nodeLiveReloadTask = nil
+        periodicRefreshTask?.cancel()
+        periodicRefreshTask = nil
+
+        if let nodeWatcher {
+            Task {
+                await nodeWatcher.stopAll()
+            }
+        }
+        nodeWatcher = nil
     }
 
     // MARK: - Node Mapper

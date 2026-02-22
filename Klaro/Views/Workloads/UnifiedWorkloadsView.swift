@@ -8,6 +8,11 @@ struct UnifiedWorkloadsView: View {
 
     @State private var viewModel = ResourceListViewModel()
     @State private var isLoadingWorkloads = false
+    @State private var workloadWatcher: ResourceWatcher?
+    @State private var watchTasks: [Task<Void, Never>] = []
+    @State private var liveReloadTask: Task<Void, Never>?
+    @State private var periodicRefreshTask: Task<Void, Never>?
+    @State private var isLiveReloading = false
 
     private let columns: [ResourceTableColumn] = [
         ResourceTableColumn(title: "State", key: "status", width: 80, sortField: .status),
@@ -56,6 +61,22 @@ struct UnifiedWorkloadsView: View {
         }
         .task {
             await loadAllWorkloads()
+            await startLiveUpdates()
+        }
+        .onChange(of: appState.selectedNamespace) { _, _ in
+            Task {
+                await loadAllWorkloads()
+                await startLiveUpdates()
+            }
+        }
+        .onChange(of: appState.activeClusterID) { _, _ in
+            Task {
+                await loadAllWorkloads()
+                await startLiveUpdates()
+            }
+        }
+        .onDisappear {
+            stopLiveUpdates()
         }
     }
 
@@ -85,13 +106,21 @@ struct UnifiedWorkloadsView: View {
 
     // MARK: - Data Loading
 
-    private func loadAllWorkloads() async {
+    private func loadAllWorkloads(showLoading: Bool = true) async {
+        if !showLoading {
+            guard !isLiveReloading else { return }
+            isLiveReloading = true
+            defer { isLiveReloading = false }
+        }
+
         guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else {
             return
         }
 
-        isLoadingWorkloads = true
-        viewModel.isLoading = true
+        if showLoading {
+            isLoadingWorkloads = true
+            viewModel.isLoading = true
+        }
         viewModel.errorMessage = nil
 
         let service = KubernetesService(client: client)
@@ -138,16 +167,15 @@ struct UnifiedWorkloadsView: View {
 
         // Map pods
         for pod in pods?.items ?? [] {
-            let phase = pod.status?.phase ?? "Unknown"
-            let containerStatuses = pod.status?.containerStatuses ?? []
-            let restarts = containerStatuses.reduce(0) { $0 + Int($1.restartCount) }
+            let restarts = PodStatusFormatter.restartCount(for: pod)
+            let status = PodStatusFormatter.displayStatus(for: pod)
             let image = pod.spec?.containers.first?.image ?? ""
 
             allItems.append(ResourceItem(
                 id: "pod/\(pod.metadata?.namespace ?? "")/\(pod.name ?? "")",
                 name: pod.name ?? "",
                 namespace: pod.metadata?.namespace,
-                status: phase,
+                status: status,
                 age: pod.metadata?.creationTimestamp,
                 labels: pod.metadata?.labels ?? [:],
                 annotations: pod.metadata?.annotations ?? [:],
@@ -307,7 +335,79 @@ struct UnifiedWorkloadsView: View {
         }
 
         viewModel.resources = allItems
-        viewModel.isLoading = false
-        isLoadingWorkloads = false
+        if showLoading {
+            viewModel.isLoading = false
+            isLoadingWorkloads = false
+        }
+    }
+
+    private func startLiveUpdates() async {
+        stopLiveUpdates()
+
+        guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else {
+            return
+        }
+
+        let namespace = appState.filteredNamespace
+        let watcher = ResourceWatcher(client: client)
+        workloadWatcher = watcher
+
+        let watchedKinds: [ResourceKind] = [
+            .pod,
+            .deployment,
+            .statefulSet,
+            .daemonSet,
+            .job,
+            .cronJob,
+            .replicaSet,
+        ]
+
+        for kind in watchedKinds {
+            let task = Task {
+                let stream = await watcher.watch(kind: kind, in: namespace)
+                for await event in stream {
+                    guard !Task.isCancelled else { break }
+                    guard event.type != .error else { continue }
+                    await MainActor.run {
+                        scheduleLiveReload()
+                    }
+                }
+            }
+            watchTasks.append(task)
+        }
+
+        periodicRefreshTask = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                guard !Task.isCancelled else { break }
+                await loadAllWorkloads(showLoading: false)
+            }
+        }
+    }
+
+    private func scheduleLiveReload() {
+        liveReloadTask?.cancel()
+        liveReloadTask = Task {
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            guard !Task.isCancelled else { return }
+            await loadAllWorkloads(showLoading: false)
+        }
+    }
+
+    private func stopLiveUpdates() {
+        watchTasks.forEach { $0.cancel() }
+        watchTasks.removeAll()
+
+        liveReloadTask?.cancel()
+        liveReloadTask = nil
+        periodicRefreshTask?.cancel()
+        periodicRefreshTask = nil
+
+        if let workloadWatcher {
+            Task {
+                await workloadWatcher.stopAll()
+            }
+        }
+        workloadWatcher = nil
     }
 }

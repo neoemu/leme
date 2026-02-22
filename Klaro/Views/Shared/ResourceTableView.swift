@@ -85,6 +85,9 @@ struct ResourceTableView: View {
         .onChange(of: columns.count) { _, _ in
             initializeColumnWidths()
         }
+        .onDisappear {
+            viewModel.stopWatch()
+        }
         .confirmationDialog(
             "Delete \(resourceToDelete?.name ?? "")?",
             isPresented: $showDeleteConfirmation,
@@ -288,6 +291,7 @@ struct ResourceTableView: View {
         LazyVStack(spacing: 0) {
             ForEach(viewModel.filteredResources) { resource in
                 resourceRow(resource)
+                    .id(rowIdentity(resource))
                     .frame(width: contentWidth)
                 Divider()
                     .padding(.leading, Theme.Dimensions.padding)
@@ -319,6 +323,7 @@ struct ResourceTableView: View {
                 // Resources in this namespace
                 ForEach(grouped[namespace] ?? []) { resource in
                     resourceRow(resource)
+                        .id(rowIdentity(resource))
                         .frame(width: contentWidth)
                     Divider()
                         .padding(.leading, Theme.Dimensions.padding)
@@ -540,6 +545,20 @@ struct ResourceTableView: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
+    }
+
+    private func rowIdentity(_ resource: ResourceItem) -> String {
+        let extrasSignature = resource.extraColumns
+            .sorted { $0.key < $1.key }
+            .map { "\($0.key)=\($0.value)" }
+            .joined(separator: "|")
+
+        return [
+            resource.id,
+            resource.status,
+            resource.namespace ?? "",
+            extrasSignature,
+        ].joined(separator: "||")
     }
 
     // MARK: - Context Menu
