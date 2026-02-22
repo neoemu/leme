@@ -28,6 +28,7 @@
 		315F810ED27DCC0B591F9FFC /* ClusterDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C2D22AD536B713BEDEDFE35 /* ClusterDashboardView.swift */; };
 		32344305A175CC2B10541546 /* NodeListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B4BB9B03BC639C4D3994FF0 /* NodeListView.swift */; };
 		371653F1E59A3492031F4A8E /* SecretListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B99BCC99CCBABDBDBFC73C6 /* SecretListView.swift */; };
+		38ADD7687E10C3D44A941C2D /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B56FB03B6822D99EC59D81B9 /* SettingsView.swift */; };
 		39843B0CED6B2D974A4B8A47 /* ServiceListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BE56E3029F9BDF65D3D9FDC /* ServiceListView.swift */; };
 		3E55F2C8CFBF2FC4B90FFCFC /* ClusterConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 081C539B73F507BE4FC463A6 /* ClusterConnection.swift */; };
 		41792B556004D4F17782E7D8 /* AppCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E713A2705FDBFD63A5D09E0 /* AppCommands.swift */; };
@@ -172,6 +173,7 @@
 		B1EBA89B0330F62715589B82 /* UnifiedWorkloadsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnifiedWorkloadsView.swift; sourceTree = "<group>"; };
 		B279D795393EEC25B531B69A /* StatusBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBadge.swift; sourceTree = "<group>"; };
 		B2A9E6185CB222B146867F5A /* Quantity+Parsing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Quantity+Parsing.swift"; sourceTree = "<group>"; };
+		B56FB03B6822D99EC59D81B9 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		B6F5D0789ED78B3A27B06129 /* StorageClassListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageClassListView.swift; sourceTree = "<group>"; };
 		CBB9954C98141BAAEAA37862 /* BottomPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomPanelView.swift; sourceTree = "<group>"; };
 		CE85CE982D0E2AFAC9101877 /* KlaroUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KlaroUITests.swift; sourceTree = "<group>"; };
@@ -245,6 +247,14 @@
 				4B739605E129B91103638A40 /* ServiceAccountListView.swift */,
 			);
 			path = AccessControl;
+			sourceTree = "<group>";
+		};
+		60F40CD9A34CAE2F099E1BC0 /* Settings */ = {
+			isa = PBXGroup;
+			children = (
+				B56FB03B6822D99EC59D81B9 /* SettingsView.swift */,
+			);
+			path = Settings;
 			sourceTree = "<group>";
 		};
 		713D94F3C8FAA1684AB4A3AD /* Workloads */ = {
@@ -401,6 +411,7 @@
 				98A32C83618AC6C07FA4E75B /* Events */,
 				90B78F07BB9AEF7AC9E1B2E0 /* Layout */,
 				8B3DEB8EFA4BB66CF848CE17 /* Network */,
+				60F40CD9A34CAE2F099E1BC0 /* Settings */,
 				B55133104AC988BDF6BB9256 /* Shared */,
 				FBFE908B77D06E327526C9E9 /* Storage */,
 				713D94F3C8FAA1684AB4A3AD /* Workloads */,
@@ -664,6 +675,7 @@
 				371653F1E59A3492031F4A8E /* SecretListView.swift in Sources */,
 				1419638027608FFE9118B2CC /* ServiceAccountListView.swift in Sources */,
 				39843B0CED6B2D974A4B8A47 /* ServiceListView.swift in Sources */,
+				38ADD7687E10C3D44A941C2D /* SettingsView.swift in Sources */,
 				ABFA129C2002E6E7E5FA7A07 /* SidebarView.swift in Sources */,
 				2E83507A225730F35550766A /* StatefulSetListView.swift in Sources */,
 				0D38C7EC643FE56ED058488D /* StatusBadge.swift in Sources */,

@@ -8,12 +8,19 @@ enum SidebarSelection: Hashable, Sendable {
 
 @Observable
 final class AppState: @unchecked Sendable {
+    static let inspectorDetailMinWidth: CGFloat = 300
+    static let inspectorDetailDefaultWidth: CGFloat = 420
+    static let inspectorDetailMaxWidth: CGFloat = 800
+
+    private static let inspectorDetailWidthDefaultsKey = "inspectorDetailWidth"
+
     var clusters: [ClusterConnection] = []
     var activeClusterID: UUID?
     var selectedNamespace: String?
     var sidebarSelection: SidebarSelection? = .dashboard
     var selectedResourceID: String?
     var isDetailPanelOpen: Bool = false
+    private(set) var inspectorDetailWidth: CGFloat = AppState.loadInspectorDetailWidth()
     var isBottomPanelOpen: Bool = false
     var bottomPanelMode: BottomPanelMode = .logs
     var bottomPanelHeight: CGFloat = 250
@@ -86,7 +93,11 @@ final class AppState: @unchecked Sendable {
 
     func selectResource(_ id: String?) {
         selectedResourceID = id
-        isDetailPanelOpen = id != nil
+    }
+
+    func showResourceDetail(_ id: String) {
+        selectedResourceID = id
+        isDetailPanelOpen = true
     }
 
     func openBottomPanel(mode: BottomPanelMode) {
@@ -94,9 +105,46 @@ final class AppState: @unchecked Sendable {
         isBottomPanelOpen = true
     }
 
+    func setInspectorDetailWidth(_ width: CGFloat, persist: Bool = true) {
+        guard width.isFinite, width > 0 else { return }
+
+        let clampedWidth = Self.clampInspectorDetailWidth(width)
+        guard abs(clampedWidth - inspectorDetailWidth) >= 0.5 else { return }
+
+        inspectorDetailWidth = clampedWidth
+        guard persist else { return }
+
+        UserDefaults.standard.set(
+            Double(clampedWidth),
+            forKey: Self.inspectorDetailWidthDefaultsKey
+        )
+    }
+
+    func persistInspectorDetailWidth() {
+        UserDefaults.standard.set(
+            Double(inspectorDetailWidth),
+            forKey: Self.inspectorDetailWidthDefaultsKey
+        )
+    }
+
     func updateCluster(_ cluster: ClusterConnection) {
         if let index = clusters.firstIndex(where: { $0.id == cluster.id }) {
             clusters[index] = cluster
         }
+    }
+
+    private static func loadInspectorDetailWidth() -> CGFloat {
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: inspectorDetailWidthDefaultsKey) != nil else {
+            return inspectorDetailDefaultWidth
+        }
+
+        let storedWidth = CGFloat(defaults.double(forKey: inspectorDetailWidthDefaultsKey))
+        guard storedWidth.isFinite else { return inspectorDetailDefaultWidth }
+        return clampInspectorDetailWidth(storedWidth)
+    }
+
+    private static func clampInspectorDetailWidth(_ width: CGFloat) -> CGFloat {
+        min(max(width, inspectorDetailMinWidth), inspectorDetailMaxWidth)
     }
 }

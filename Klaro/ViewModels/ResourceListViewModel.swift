@@ -1,6 +1,8 @@
+import AppKit
 import Foundation
 import SwiftkubeClient
 import SwiftkubeModel
+import UniformTypeIdentifiers
 
 struct ResourceItem: Identifiable, Sendable, Hashable {
     let id: String
@@ -44,6 +46,12 @@ final class ResourceListViewModel {
     var sortField: SortField = .name
     var sortOrder: SortOrder = .ascending
     var selectedResourceID: String?
+    var deleteError: String?
+    var showDeleteError = false
+    var restartError: String?
+    var showRestartError = false
+    var scaleError: String?
+    var showScaleError = false
 
     private var watchTask: Task<Void, Never>?
 
@@ -186,6 +194,214 @@ final class ResourceListViewModel {
             await loadDeployments(client: client, namespace: namespace)
         default:
             break
+        }
+    }
+
+    // MARK: - Delete
+
+    func deleteResource(kind: ResourceKind, name: String, namespace: String?, client: KubernetesClient) async {
+        let service = KubernetesService(client: client)
+        do {
+            switch kind {
+            case .pod:
+                try await service.delete(core.v1.Pod.self, name: name, in: namespace)
+            case .deployment:
+                try await service.delete(apps.v1.Deployment.self, name: name, in: namespace)
+            case .statefulSet:
+                try await service.delete(apps.v1.StatefulSet.self, name: name, in: namespace)
+            case .daemonSet:
+                try await service.delete(apps.v1.DaemonSet.self, name: name, in: namespace)
+            case .job:
+                try await service.delete(batch.v1.Job.self, name: name, in: namespace)
+            case .cronJob:
+                try await service.delete(batch.v1.CronJob.self, name: name, in: namespace)
+            case .replicaSet:
+                try await service.delete(apps.v1.ReplicaSet.self, name: name, in: namespace)
+            case .service:
+                try await service.delete(core.v1.Service.self, name: name, in: namespace)
+            case .ingress:
+                try await service.delete(networking.v1.Ingress.self, name: name, in: namespace)
+            case .endpoint:
+                try await service.delete(core.v1.Endpoints.self, name: name, in: namespace)
+            case .networkPolicy:
+                try await service.delete(networking.v1.NetworkPolicy.self, name: name, in: namespace)
+            case .configMap:
+                try await service.delete(core.v1.ConfigMap.self, name: name, in: namespace)
+            case .secret:
+                try await service.delete(core.v1.Secret.self, name: name, in: namespace)
+            case .persistentVolumeClaim:
+                try await service.delete(core.v1.PersistentVolumeClaim.self, name: name, in: namespace)
+            case .serviceAccount:
+                try await service.delete(core.v1.ServiceAccount.self, name: name, in: namespace)
+            case .role:
+                try await service.delete(rbac.v1.Role.self, name: name, in: namespace)
+            case .roleBinding:
+                try await service.delete(rbac.v1.RoleBinding.self, name: name, in: namespace)
+            case .event:
+                try await service.delete(core.v1.Event.self, name: name, in: namespace)
+            case .node:
+                try await service.deleteClusterScoped(core.v1.Node.self, name: name)
+            case .namespace:
+                try await service.deleteClusterScoped(core.v1.Namespace.self, name: name)
+            case .persistentVolume:
+                try await service.deleteClusterScoped(core.v1.PersistentVolume.self, name: name)
+            case .storageClass:
+                try await service.deleteClusterScoped(storage.v1.StorageClass.self, name: name)
+            case .clusterRole:
+                try await service.deleteClusterScoped(rbac.v1.ClusterRole.self, name: name)
+            case .clusterRoleBinding:
+                try await service.deleteClusterScoped(rbac.v1.ClusterRoleBinding.self, name: name)
+            }
+            let resourceID = namespace.map { "\($0)/\(name)" } ?? name
+            resources.removeAll { $0.id == resourceID }
+        } catch {
+            deleteError = error.localizedDescription
+            showDeleteError = true
+        }
+    }
+
+    // MARK: - Scale
+
+    func scaleResource(kind: ResourceKind, name: String, namespace: String?, replicas: Int, client: KubernetesClient) async {
+        let service = KubernetesService(client: client)
+        do {
+            switch kind {
+            case .deployment:
+                try await service.scaleDeployment(name: name, in: namespace, replicas: Int32(replicas))
+            case .statefulSet:
+                try await service.scaleStatefulSet(name: name, in: namespace, replicas: Int32(replicas))
+            case .replicaSet:
+                try await service.scaleReplicaSet(name: name, in: namespace, replicas: Int32(replicas))
+            default:
+                break
+            }
+        } catch {
+            scaleError = error.localizedDescription
+            showScaleError = true
+        }
+    }
+
+    // MARK: - Restart
+
+    func restartResource(kind: ResourceKind, name: String, namespace: String?, client: KubernetesClient) async {
+        let service = KubernetesService(client: client)
+        do {
+            switch kind {
+            case .deployment:
+                try await service.restartDeployment(name: name, in: namespace)
+            case .statefulSet:
+                try await service.restartStatefulSet(name: name, in: namespace)
+            case .daemonSet:
+                try await service.restartDaemonSet(name: name, in: namespace)
+            default:
+                break
+            }
+        } catch {
+            restartError = error.localizedDescription
+            showRestartError = true
+        }
+    }
+
+    // MARK: - Download YAML
+
+    func downloadResourceYAML(kind: ResourceKind, name: String, namespace: String?, client: KubernetesClient) async {
+        let service = KubernetesService(client: client)
+        do {
+            let yaml: String
+            switch kind {
+            case .pod:
+                let r = try await service.get(core.v1.Pod.self, name: name, in: namespace)
+                yaml = try await service.getYAML(r)
+            case .deployment:
+                let r = try await service.get(apps.v1.Deployment.self, name: name, in: namespace)
+                yaml = try await service.getYAML(r)
+            case .statefulSet:
+                let r = try await service.get(apps.v1.StatefulSet.self, name: name, in: namespace)
+                yaml = try await service.getYAML(r)
+            case .daemonSet:
+                let r = try await service.get(apps.v1.DaemonSet.self, name: name, in: namespace)
+                yaml = try await service.getYAML(r)
+            case .job:
+                let r = try await service.get(batch.v1.Job.self, name: name, in: namespace)
+                yaml = try await service.getYAML(r)
+            case .cronJob:
+                let r = try await service.get(batch.v1.CronJob.self, name: name, in: namespace)
+                yaml = try await service.getYAML(r)
+            case .replicaSet:
+                let r = try await service.get(apps.v1.ReplicaSet.self, name: name, in: namespace)
+                yaml = try await service.getYAML(r)
+            case .service:
+                let r = try await service.get(core.v1.Service.self, name: name, in: namespace)
+                yaml = try await service.getYAML(r)
+            case .ingress:
+                let r = try await service.get(networking.v1.Ingress.self, name: name, in: namespace)
+                yaml = try await service.getYAML(r)
+            case .configMap:
+                let r = try await service.get(core.v1.ConfigMap.self, name: name, in: namespace)
+                yaml = try await service.getYAML(r)
+            case .secret:
+                let r = try await service.get(core.v1.Secret.self, name: name, in: namespace)
+                yaml = try await service.getYAML(r)
+            case .persistentVolumeClaim:
+                let r = try await service.get(core.v1.PersistentVolumeClaim.self, name: name, in: namespace)
+                yaml = try await service.getYAML(r)
+            case .serviceAccount:
+                let r = try await service.get(core.v1.ServiceAccount.self, name: name, in: namespace)
+                yaml = try await service.getYAML(r)
+            case .endpoint:
+                let r = try await service.get(core.v1.Endpoints.self, name: name, in: namespace)
+                yaml = try await service.getYAML(r)
+            case .networkPolicy:
+                let r = try await service.get(networking.v1.NetworkPolicy.self, name: name, in: namespace)
+                yaml = try await service.getYAML(r)
+            case .role:
+                let r = try await service.get(rbac.v1.Role.self, name: name, in: namespace)
+                yaml = try await service.getYAML(r)
+            case .roleBinding:
+                let r = try await service.get(rbac.v1.RoleBinding.self, name: name, in: namespace)
+                yaml = try await service.getYAML(r)
+            case .event:
+                let r = try await service.get(core.v1.Event.self, name: name, in: namespace)
+                yaml = try await service.getYAML(r)
+            case .node:
+                let r = try await service.getClusterScoped(core.v1.Node.self, name: name)
+                yaml = try await service.getYAML(r)
+            case .namespace:
+                let r = try await service.getClusterScoped(core.v1.Namespace.self, name: name)
+                yaml = try await service.getYAML(r)
+            case .persistentVolume:
+                let r = try await service.getClusterScoped(core.v1.PersistentVolume.self, name: name)
+                yaml = try await service.getYAML(r)
+            case .storageClass:
+                let r = try await service.getClusterScoped(storage.v1.StorageClass.self, name: name)
+                yaml = try await service.getYAML(r)
+            case .clusterRole:
+                let r = try await service.getClusterScoped(rbac.v1.ClusterRole.self, name: name)
+                yaml = try await service.getYAML(r)
+            case .clusterRoleBinding:
+                let r = try await service.getClusterScoped(rbac.v1.ClusterRoleBinding.self, name: name)
+                yaml = try await service.getYAML(r)
+            }
+            presentSavePanel(yaml: yaml, fileName: "\(name).yaml")
+        } catch {
+            deleteError = "Failed to download YAML: \(error.localizedDescription)"
+            showDeleteError = true
+        }
+    }
+
+    private func presentSavePanel(yaml: String, fileName: String) {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = fileName
+        panel.allowedContentTypes = [UTType.yaml]
+        panel.canCreateDirectories = true
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        do {
+            try yaml.write(to: url, atomically: true, encoding: .utf8)
+        } catch {
+            deleteError = "Failed to save file: \(error.localizedDescription)"
+            showDeleteError = true
         }
     }
 

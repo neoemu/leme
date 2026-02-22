@@ -25,8 +25,36 @@ struct DaemonSetListView: View {
                 appState.selectResource(resource.id)
                 appState.openBottomPanel(mode: .yaml)
             },
-            onDelete: { _ in }
+            onDelete: { resource in
+                Task {
+                    guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                    await viewModel.deleteResource(kind: .daemonSet, name: resource.name, namespace: resource.namespace, client: client)
+                }
+            },
+            onRestart: { resource in
+                Task {
+                    guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                    await viewModel.restartResource(kind: .daemonSet, name: resource.name, namespace: resource.namespace, client: client)
+                    await loadResources()
+                }
+            },
+            onDownloadYAML: { resource in
+                Task {
+                    guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                    await viewModel.downloadResourceYAML(kind: .daemonSet, name: resource.name, namespace: resource.namespace, client: client)
+                }
+            }
         )
+        .alert("Delete Failed", isPresented: $viewModel.showDeleteError) {
+            Button("OK") {}
+        } message: {
+            Text(viewModel.deleteError ?? "Unknown error")
+        }
+        .alert("Restart Failed", isPresented: $viewModel.showRestartError) {
+            Button("OK") {}
+        } message: {
+            Text(viewModel.restartError ?? "Unknown error")
+        }
         .task {
             await loadResources()
         }

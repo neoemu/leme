@@ -27,7 +27,9 @@ struct ResourceDetailPanel: View {
             panelHeader
             tabBar
             tabContent
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: - Header
@@ -243,6 +245,7 @@ struct ResourceDetailPanel: View {
                 flags: [.selectable],
                 indentStyle: .softTab(width: 2)
             )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 

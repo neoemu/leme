@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct MainLayout: View {
@@ -18,11 +19,26 @@ struct MainLayout: View {
                         .transition(.move(edge: .bottom))
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .animation(.easeInOut(duration: 0.2), value: appState.isBottomPanelOpen)
-            .inspector(isPresented: $appState.isDetailPanelOpen) {
-                InspectorDetailView()
+            .overlay(alignment: .trailing) {
+                if appState.isDetailPanelOpen {
+                    ResizableInspectorDetailView(
+                        initialWidth: appState.inspectorDetailWidth,
+                        onResizeEnded: { finalWidth in
+                            var transaction = Transaction()
+                            transaction.disablesAnimations = true
+                            withTransaction(transaction) {
+                                appState.setInspectorDetailWidth(finalWidth, persist: true)
+                            }
+                        }
+                    )
+                    .zIndex(1)
+                    .shadow(color: .black.opacity(0.25), radius: 6, x: -2, y: 0)
+                    .transition(.move(edge: .trailing))
+                }
             }
-            .inspectorColumnWidth(min: 300, ideal: 420, max: 800)
+            .animation(.easeInOut(duration: 0.15), value: appState.isDetailPanelOpen)
         }
         .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 320)
         .toolbar {
@@ -58,5 +74,98 @@ struct MainLayout: View {
             }
         }
         .animation(.easeInOut(duration: 0.15), value: appState.isCommandPaletteOpen)
+    }
+}
+
+private struct ResizableInspectorDetailView: View {
+    let initialWidth: CGFloat
+    let onResizeEnded: (CGFloat) -> Void
+
+    @State private var width: CGFloat
+    @State private var dragStartWidth: CGFloat?
+    @State private var isHoveringResizeHandle = false
+
+    init(initialWidth: CGFloat, onResizeEnded: @escaping (CGFloat) -> Void) {
+        self.initialWidth = initialWidth
+        self.onResizeEnded = onResizeEnded
+        let clampedWidth = min(max(initialWidth, AppState.inspectorDetailMinWidth), AppState.inspectorDetailMaxWidth)
+        _width = State(initialValue: clampedWidth)
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            resizeHandle
+            InspectorDetailView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .background(Theme.Colors.contentBackground)
+        }
+        .frame(width: width)
+        .onAppear {
+            width = clamp(initialWidth)
+        }
+        .onDisappear {
+            if isHoveringResizeHandle {
+                NSCursor.pop()
+                isHoveringResizeHandle = false
+            }
+        }
+    }
+
+    private var resizeHandle: some View {
+        ZStack(alignment: .trailing) {
+            Color.clear
+            Rectangle()
+                .fill(Theme.Colors.separator.opacity(0.45))
+                .frame(width: 1)
+        }
+        .frame(width: 8)
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            guard hovering != isHoveringResizeHandle else { return }
+
+            if hovering { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+            isHoveringResizeHandle = hovering
+        }
+        .highPriorityGesture(
+            DragGesture(minimumDistance: 1)
+                .onChanged { value in
+                    if dragStartWidth == nil {
+                        dragStartWidth = width
+                    }
+
+                    guard let startWidth = dragStartWidth else { return }
+                    let proposedWidth = clamp(startWidth - value.translation.width)
+                    let snappedWidth = (proposedWidth / 2).rounded() * 2
+
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) {
+                        width = snappedWidth
+                    }
+                }
+                .onEnded { value in
+                    defer {
+                        dragStartWidth = nil
+                    }
+
+                    guard let startWidth = dragStartWidth else {
+                        onResizeEnded(width)
+                        return
+                    }
+
+                    let proposedWidth = clamp(startWidth - value.translation.width)
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) {
+                        width = proposedWidth
+                    }
+                    onResizeEnded(proposedWidth)
+                }
+        )
+        .accessibilityLabel("Resize detail panel")
+    }
+
+    private func clamp(_ width: CGFloat) -> CGFloat {
+        min(max(width, AppState.inspectorDetailMinWidth), AppState.inspectorDetailMaxWidth)
     }
 }

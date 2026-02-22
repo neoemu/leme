@@ -6,6 +6,8 @@ struct PVListView: View {
     @Environment(AppState.self) private var appState
     @Environment(ClusterViewModel.self) private var clusterViewModel
     @State private var viewModel = ResourceListViewModel()
+    @State private var resourceToDelete: ResourceItem?
+    @State private var showDeleteConfirmation = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -42,6 +44,14 @@ struct PVListView: View {
                     TableColumn("Name") { item in
                         Text(item.name)
                             .font(Theme.Fonts.tableCell)
+                            .contextMenu {
+                                Button(role: .destructive) {
+                                    resourceToDelete = item
+                                    showDeleteConfirmation = true
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
                     }
                     TableColumn("Capacity") { item in
                         Text(item.extraColumns["capacity"] ?? "")
@@ -80,6 +90,31 @@ struct PVListView: View {
             }
         }
         .task { await loadData() }
+        .confirmationDialog(
+            "Delete \(resourceToDelete?.name ?? "")?",
+            isPresented: $showDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let resource = resourceToDelete {
+                    Task {
+                        guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                        await viewModel.deleteResource(kind: .persistentVolume, name: resource.name, namespace: resource.namespace, client: client)
+                    }
+                }
+                resourceToDelete = nil
+            }
+            Button("Cancel", role: .cancel) {
+                resourceToDelete = nil
+            }
+        } message: {
+            Text("This action cannot be undone.")
+        }
+        .alert("Delete Failed", isPresented: $viewModel.showDeleteError) {
+            Button("OK") {}
+        } message: {
+            Text(viewModel.deleteError ?? "Unknown error")
+        }
     }
 
     private func loadData() async {

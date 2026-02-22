@@ -23,8 +23,48 @@ struct StatefulSetListView: View {
                 appState.selectResource(resource.id)
                 appState.openBottomPanel(mode: .yaml)
             },
-            onDelete: { _ in }
+            onDelete: { resource in
+                Task {
+                    guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                    await viewModel.deleteResource(kind: .statefulSet, name: resource.name, namespace: resource.namespace, client: client)
+                }
+            },
+            onScale: { resource, replicas in
+                Task {
+                    guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                    await viewModel.scaleResource(kind: .statefulSet, name: resource.name, namespace: resource.namespace, replicas: replicas, client: client)
+                    await loadResources()
+                }
+            },
+            onRestart: { resource in
+                Task {
+                    guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                    await viewModel.restartResource(kind: .statefulSet, name: resource.name, namespace: resource.namespace, client: client)
+                    await loadResources()
+                }
+            },
+            onDownloadYAML: { resource in
+                Task {
+                    guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                    await viewModel.downloadResourceYAML(kind: .statefulSet, name: resource.name, namespace: resource.namespace, client: client)
+                }
+            }
         )
+        .alert("Delete Failed", isPresented: $viewModel.showDeleteError) {
+            Button("OK") {}
+        } message: {
+            Text(viewModel.deleteError ?? "Unknown error")
+        }
+        .alert("Scale Failed", isPresented: $viewModel.showScaleError) {
+            Button("OK") {}
+        } message: {
+            Text(viewModel.scaleError ?? "Unknown error")
+        }
+        .alert("Restart Failed", isPresented: $viewModel.showRestartError) {
+            Button("OK") {}
+        } message: {
+            Text(viewModel.restartError ?? "Unknown error")
+        }
         .task {
             await loadResources()
         }

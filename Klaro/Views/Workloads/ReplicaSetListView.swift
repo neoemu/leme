@@ -7,80 +7,56 @@ struct ReplicaSetListView: View {
     @Environment(ClusterViewModel.self) private var clusterViewModel
     @State private var viewModel = ResourceListViewModel()
 
+    private let columns: [ResourceTableColumn] = [
+        ResourceTableColumn(title: "Name", key: "name", sortField: .name),
+        ResourceTableColumn(title: "Namespace", key: "namespace", width: 120, sortField: .namespace),
+        ResourceTableColumn(title: "Desired", key: "desired", width: 70),
+        ResourceTableColumn(title: "Current", key: "current", width: 70),
+        ResourceTableColumn(title: "Ready", key: "ready", width: 70),
+        ResourceTableColumn(title: "Age", key: "age", width: 60, sortField: .age),
+    ]
+
     var body: some View {
-        VStack(spacing: 0) {
-            if viewModel.isLoading && viewModel.resources.isEmpty {
-                ProgressView("Loading replica sets...")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let errorMessage = viewModel.errorMessage {
-                EmptyStateView(
-                    icon: "exclamationmark.triangle",
-                    title: "Error Loading Replica Sets",
-                    message: errorMessage
-                )
-            } else if viewModel.filteredResources.isEmpty {
-                EmptyStateView(
-                    icon: ResourceKind.replicaSet.icon,
-                    title: "No Replica Sets",
-                    message: "No replica sets found in the selected namespace."
-                )
-            } else {
-                replicaSetTable
+        ResourceTableView(
+            columns: columns,
+            viewModel: viewModel,
+            onViewYAML: { resource in
+                appState.selectResource(resource.id)
+                appState.openBottomPanel(mode: .yaml)
+            },
+            onDelete: { resource in
+                Task {
+                    guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                    await viewModel.deleteResource(kind: .replicaSet, name: resource.name, namespace: resource.namespace, client: client)
+                }
+            },
+            onScale: { resource, replicas in
+                Task {
+                    guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                    await viewModel.scaleResource(kind: .replicaSet, name: resource.name, namespace: resource.namespace, replicas: replicas, client: client)
+                    await loadData()
+                }
+            },
+            onDownloadYAML: { resource in
+                Task {
+                    guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                    await viewModel.downloadResourceYAML(kind: .replicaSet, name: resource.name, namespace: resource.namespace, client: client)
+                }
             }
+        )
+        .alert("Delete Failed", isPresented: $viewModel.showDeleteError) {
+            Button("OK") {}
+        } message: {
+            Text(viewModel.deleteError ?? "Unknown error")
+        }
+        .alert("Scale Failed", isPresented: $viewModel.showScaleError) {
+            Button("OK") {}
+        } message: {
+            Text(viewModel.scaleError ?? "Unknown error")
         }
         .task { await loadData() }
         .onChange(of: appState.selectedNamespace) { _, _ in
             Task { await loadData() }
-        }
-    }
-
-    private var replicaSetTable: some View {
-        Table(viewModel.filteredResources, selection: $viewModel.selectedResourceID) {
-            TableColumn("Name") { item in
-                Text(item.name)
-                    .font(Theme.Fonts.monoSmall)
-            }
-            .width(min: 120, ideal: 200)
-
-            TableColumn("Namespace") { item in
-                Text(item.namespace ?? "-")
-                    .font(Theme.Fonts.tableCell)
-                    .foregroundStyle(Theme.Colors.secondaryText)
-            }
-            .width(min: 80, ideal: 120)
-
-            TableColumn("Desired") { item in
-                Text(item.extraColumns["desired"] ?? "0")
-                    .font(Theme.Fonts.monoSmall)
-            }
-            .width(min: 50, ideal: 70)
-
-            TableColumn("Current") { item in
-                Text(item.extraColumns["current"] ?? "0")
-                    .font(Theme.Fonts.monoSmall)
-            }
-            .width(min: 50, ideal: 70)
-
-            TableColumn("Ready") { item in
-                Text(item.extraColumns["ready"] ?? "0")
-                    .font(Theme.Fonts.monoSmall)
-            }
-            .width(min: 50, ideal: 70)
-
-            TableColumn("Age") { item in
-                if let age = item.age {
-                    AgeLabel(date: age)
-                } else {
-                    Text("-")
-                        .font(Theme.Fonts.monoSmall)
-                        .foregroundStyle(Theme.Colors.tertiaryText)
-                }
-            }
-            .width(min: 40, ideal: 60)
-        }
-        .tableStyle(.inset(alternatesRowBackgrounds: true))
-        .onChange(of: viewModel.selectedResourceID) { _, newValue in
-            appState.selectResource(newValue)
         }
     }
 

@@ -30,5 +30,9 @@ struct KlaroApp: App {
         .commands {
             AppCommands(appState: appState)
         }
+
+        Settings {
+            SettingsView()
+        }
     }
 }

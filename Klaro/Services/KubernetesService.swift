@@ -341,6 +341,61 @@ actor KubernetesService {
         }
     }
 
+    // MARK: - Scale Operations
+
+    func scaleDeployment(name: String, in namespace: String?, replicas: Int32) async throws {
+        let ns: NamespaceSelector = namespace.map { .namespace($0) } ?? .allNamespaces
+        var scale = try await client.appsV1.deployments.getScale(in: ns, name: name)
+        scale.spec?.replicas = replicas
+        _ = try await client.appsV1.deployments.updateScale(in: ns, name: name, scale: scale)
+    }
+
+    func scaleStatefulSet(name: String, in namespace: String?, replicas: Int32) async throws {
+        let ns: NamespaceSelector = namespace.map { .namespace($0) } ?? .allNamespaces
+        var scale = try await client.appsV1.statefulSets.getScale(in: ns, name: name)
+        scale.spec?.replicas = replicas
+        _ = try await client.appsV1.statefulSets.updateScale(in: ns, name: name, scale: scale)
+    }
+
+    func scaleReplicaSet(name: String, in namespace: String?, replicas: Int32) async throws {
+        let ns: NamespaceSelector = namespace.map { .namespace($0) } ?? .allNamespaces
+        var scale = try await client.appsV1.replicaSets.getScale(in: ns, name: name)
+        scale.spec?.replicas = replicas
+        _ = try await client.appsV1.replicaSets.updateScale(in: ns, name: name, scale: scale)
+    }
+
+    // MARK: - Restart Operations (Rollout Restart)
+
+    func restartDeployment(name: String, in namespace: String?) async throws {
+        let ns: NamespaceSelector = namespace.map { .namespace($0) } ?? .allNamespaces
+        var resource = try await client.appsV1.deployments.get(in: ns, name: name)
+        if resource.spec?.template.metadata?.annotations == nil {
+            resource.spec?.template.metadata?.annotations = [:]
+        }
+        resource.spec?.template.metadata?.annotations?["kubectl.kubernetes.io/restartedAt"] = ISO8601DateFormatter().string(from: Date())
+        _ = try await client.appsV1.deployments.update(inNamespace: ns, resource)
+    }
+
+    func restartStatefulSet(name: String, in namespace: String?) async throws {
+        let ns: NamespaceSelector = namespace.map { .namespace($0) } ?? .allNamespaces
+        var resource = try await client.appsV1.statefulSets.get(in: ns, name: name)
+        if resource.spec?.template.metadata?.annotations == nil {
+            resource.spec?.template.metadata?.annotations = [:]
+        }
+        resource.spec?.template.metadata?.annotations?["kubectl.kubernetes.io/restartedAt"] = ISO8601DateFormatter().string(from: Date())
+        _ = try await client.appsV1.statefulSets.update(inNamespace: ns, resource)
+    }
+
+    func restartDaemonSet(name: String, in namespace: String?) async throws {
+        let ns: NamespaceSelector = namespace.map { .namespace($0) } ?? .allNamespaces
+        var resource = try await client.appsV1.daemonSets.get(in: ns, name: name)
+        if resource.spec?.template.metadata?.annotations == nil {
+            resource.spec?.template.metadata?.annotations = [:]
+        }
+        resource.spec?.template.metadata?.annotations?["kubectl.kubernetes.io/restartedAt"] = ISO8601DateFormatter().string(from: Date())
+        _ = try await client.appsV1.daemonSets.update(inNamespace: ns, resource)
+    }
+
     // MARK: - Pod-Specific Operations
 
     /// Fetches logs for a pod (non-streaming).

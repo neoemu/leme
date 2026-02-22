@@ -24,8 +24,24 @@ struct CronJobListView: View {
                 appState.selectResource(resource.id)
                 appState.openBottomPanel(mode: .yaml)
             },
-            onDelete: { _ in }
+            onDelete: { resource in
+                Task {
+                    guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                    await viewModel.deleteResource(kind: .cronJob, name: resource.name, namespace: resource.namespace, client: client)
+                }
+            },
+            onDownloadYAML: { resource in
+                Task {
+                    guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                    await viewModel.downloadResourceYAML(kind: .cronJob, name: resource.name, namespace: resource.namespace, client: client)
+                }
+            }
         )
+        .alert("Delete Failed", isPresented: $viewModel.showDeleteError) {
+            Button("OK") {}
+        } message: {
+            Text(viewModel.deleteError ?? "Unknown error")
+        }
         .task {
             await loadResources()
         }

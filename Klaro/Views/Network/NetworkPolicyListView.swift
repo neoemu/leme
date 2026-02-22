@@ -6,6 +6,8 @@ struct NetworkPolicyListView: View {
     @Environment(AppState.self) private var appState
     @Environment(ClusterViewModel.self) private var clusterViewModel
     @State private var viewModel = ResourceListViewModel()
+    @State private var resourceToDelete: ResourceItem?
+    @State private var showDeleteConfirmation = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -32,6 +34,31 @@ struct NetworkPolicyListView: View {
         .onChange(of: appState.selectedNamespace) { _, _ in
             Task { await loadData() }
         }
+        .confirmationDialog(
+            "Delete \(resourceToDelete?.name ?? "")?",
+            isPresented: $showDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let resource = resourceToDelete {
+                    Task {
+                        guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                        await viewModel.deleteResource(kind: .networkPolicy, name: resource.name, namespace: resource.namespace, client: client)
+                    }
+                }
+                resourceToDelete = nil
+            }
+            Button("Cancel", role: .cancel) {
+                resourceToDelete = nil
+            }
+        } message: {
+            Text("This action cannot be undone.")
+        }
+        .alert("Delete Failed", isPresented: $viewModel.showDeleteError) {
+            Button("OK") {}
+        } message: {
+            Text(viewModel.deleteError ?? "Unknown error")
+        }
     }
 
     private var networkPolicyTable: some View {
@@ -39,6 +66,14 @@ struct NetworkPolicyListView: View {
             TableColumn("Name") { item in
                 Text(item.name)
                     .font(Theme.Fonts.monoSmall)
+                    .contextMenu {
+                        Button(role: .destructive) {
+                            resourceToDelete = item
+                            showDeleteConfirmation = true
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
             }
             .width(min: 120, ideal: 200)
 

@@ -37,6 +37,9 @@ struct ResourceTableView: View {
     var onShell: ((ResourceItem) -> Void)?
     var onViewYAML: ((ResourceItem) -> Void)?
     var onDelete: ((ResourceItem) -> Void)?
+    var onScale: ((ResourceItem, Int) -> Void)?
+    var onRestart: ((ResourceItem) -> Void)?
+    var onDownloadYAML: ((ResourceItem) -> Void)?
     /// Optional custom cell renderer. Return a view for custom rendering, or nil for default.
     var customCellRenderer: ((ResourceTableColumn, ResourceItem) -> AnyView?)?
     /// Optional namespace grouping header renderer.
@@ -49,6 +52,27 @@ struct ResourceTableView: View {
     /// Tracks the total available width for the table area.
     @State private var availableWidth: CGFloat = 0
 
+    // Delete confirmation
+    @State private var resourceToDelete: ResourceItem?
+    @State private var showDeleteConfirmation = false
+
+    // Scale sheet
+    @State private var resourceToScale: ResourceItem?
+    @State private var desiredReplicas: Int = 1
+
+    // Restart confirmation
+    @State private var resourceToRestart: ResourceItem?
+    @State private var showRestartConfirmation = false
+
+    /// Width of the fixed actions column ("..." button).
+    private let actionsColumnWidth: CGFloat = 36
+
+    /// Whether this table has any action callbacks configured.
+    private var hasActions: Bool {
+        onViewLogs != nil || onShell != nil || onViewYAML != nil ||
+        onDelete != nil || onScale != nil || onRestart != nil || onDownloadYAML != nil
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             searchBar
@@ -60,6 +84,51 @@ struct ResourceTableView: View {
         }
         .onChange(of: columns.count) { _, _ in
             initializeColumnWidths()
+        }
+        .confirmationDialog(
+            "Delete \(resourceToDelete?.name ?? "")?",
+            isPresented: $showDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let resource = resourceToDelete {
+                    onDelete?(resource)
+                }
+                resourceToDelete = nil
+            }
+            Button("Cancel", role: .cancel) {
+                resourceToDelete = nil
+            }
+        } message: {
+            Text("This action cannot be undone.")
+        }
+        .confirmationDialog(
+            "Restart \(resourceToRestart?.name ?? "")?",
+            isPresented: $showRestartConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Restart", role: .destructive) {
+                if let resource = resourceToRestart {
+                    onRestart?(resource)
+                }
+                resourceToRestart = nil
+            }
+            Button("Cancel", role: .cancel) {
+                resourceToRestart = nil
+            }
+        } message: {
+            Text("This will trigger a rolling restart of all pods.")
+        }
+        .sheet(item: $resourceToScale) { resource in
+            ScaleSheetView(
+                resourceName: resource.name,
+                replicas: $desiredReplicas
+            ) {
+                onScale?(resource, desiredReplicas)
+                resourceToScale = nil
+            } onCancel: {
+                resourceToScale = nil
+            }
         }
     }
 
@@ -82,20 +151,22 @@ struct ResourceTableView: View {
                 }
             let horizontalPadding = Theme.Dimensions.padding * 2
             let dragHandlesWidth = CGFloat(columns.count - 1) * 8
-            let remaining = availableWidth - fixedTotal - horizontalPadding - dragHandlesWidth
+            let actionsWidth = hasActions ? actionsColumnWidth + 8 : 0
+            let remaining = availableWidth - fixedTotal - horizontalPadding - dragHandlesWidth - actionsWidth
             return max(col.minWidth, remaining)
         }
         return max(col.minWidth, columnWidths[index])
     }
 
-    /// Total content width including all columns + padding + drag handles.
+    /// Total content width including all columns + padding + drag handles + actions column.
     private var totalContentWidth: CGFloat {
         let horizontalPadding = Theme.Dimensions.padding * 2
         let dragHandlesWidth = CGFloat(columns.count - 1) * 8
         let columnTotal = columns.indices.reduce(CGFloat(0)) { sum, idx in
             sum + effectiveWidth(at: idx)
         }
-        return columnTotal + horizontalPadding + dragHandlesWidth
+        let actionsWidth = hasActions ? actionsColumnWidth + 8 : 0
+        return columnTotal + horizontalPadding + dragHandlesWidth + actionsWidth
     }
 
     // MARK: - Search Bar
@@ -267,6 +338,11 @@ struct ResourceTableView: View {
                     columnResizeHandle(at: index)
                 }
             }
+
+            if hasActions {
+                Spacer().frame(width: 8)
+                Spacer().frame(width: actionsColumnWidth)
+            }
         }
         .padding(.horizontal, Theme.Dimensions.padding)
         .padding(.vertical, Theme.Dimensions.smallSpacing)
@@ -358,17 +434,60 @@ struct ResourceTableView: View {
                         .frame(width: 8)
                 }
             }
+
+            if hasActions {
+                Spacer().frame(width: 8)
+                actionsMenuButton(for: resource)
+                    .frame(width: actionsColumnWidth)
+            }
         }
         .padding(.horizontal, Theme.Dimensions.padding)
         .frame(height: Theme.Dimensions.tableRowHeight)
         .background(isSelected ? Theme.Colors.accent.opacity(0.1) : .clear)
         .contentShape(Rectangle())
         .onTapGesture {
-            appState.selectResource(resource.id)
+            if appState.selectedResourceID == resource.id {
+                appState.selectResource(nil)
+            } else {
+                appState.selectResource(resource.id)
+            }
         }
         .contextMenu {
+            Button {
+                appState.showResourceDetail(resource.id)
+            } label: {
+                Label("Details", systemImage: "info.circle")
+            }
+
+            Divider()
+
             contextMenuItems(for: resource)
         }
+    }
+
+    // MARK: - Actions Menu Button ("...")
+
+    private func actionsMenuButton(for resource: ResourceItem) -> some View {
+        Menu {
+            Button {
+                appState.showResourceDetail(resource.id)
+            } label: {
+                Label("Details", systemImage: "info.circle")
+            }
+
+            Divider()
+
+            contextMenuItems(for: resource)
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Theme.Colors.secondaryText)
+                .frame(width: 28, height: 22)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
     }
 
     @ViewBuilder
@@ -424,6 +543,15 @@ struct ResourceTableView: View {
 
     @ViewBuilder
     private func contextMenuItems(for resource: ResourceItem) -> some View {
+        // --- Interactive actions ---
+        if let onShell {
+            Button {
+                onShell(resource)
+            } label: {
+                Label("Execute Shell", systemImage: "terminal")
+            }
+        }
+
         if let onViewLogs {
             Button {
                 onViewLogs(resource)
@@ -432,32 +560,106 @@ struct ResourceTableView: View {
             }
         }
 
-        if let onShell {
+        if onScale != nil {
             Button {
-                onShell(resource)
+                // Parse current replicas from "ready/total" format
+                if let readyStr = resource.extraColumns["ready"],
+                   let slashIndex = readyStr.firstIndex(of: "/") {
+                    let totalStr = readyStr[readyStr.index(after: slashIndex)...]
+                    desiredReplicas = Int(totalStr) ?? 1
+                } else if let desiredStr = resource.extraColumns["desired"] {
+                    desiredReplicas = Int(desiredStr) ?? 1
+                } else {
+                    desiredReplicas = 1
+                }
+                resourceToScale = resource
             } label: {
-                Label("Shell", systemImage: "terminal")
+                Label("Scale...", systemImage: "arrow.up.arrow.down")
             }
         }
 
+        if onRestart != nil {
+            Button {
+                resourceToRestart = resource
+                showRestartConfirmation = true
+            } label: {
+                Label("Restart", systemImage: "arrow.clockwise")
+            }
+        }
+
+        if onShell != nil || onViewLogs != nil || onScale != nil || onRestart != nil {
+            Divider()
+        }
+
+        // --- Edit / inspect actions ---
         if let onViewYAML {
             Button {
                 onViewYAML(resource)
             } label: {
-                Label("View YAML", systemImage: "doc.plaintext")
+                Label("Edit YAML", systemImage: "doc.plaintext")
             }
         }
 
-        if onViewLogs != nil || onShell != nil || onViewYAML != nil {
+        if let onDownloadYAML {
+            Button {
+                onDownloadYAML(resource)
+            } label: {
+                Label("Download YAML", systemImage: "arrow.down.doc")
+            }
+        }
+
+        if onViewYAML != nil || onDownloadYAML != nil {
             Divider()
         }
 
-        if let onDelete {
+        // --- Destructive actions ---
+        if onDelete != nil {
             Button(role: .destructive) {
-                onDelete(resource)
+                resourceToDelete = resource
+                showDeleteConfirmation = true
             } label: {
                 Label("Delete", systemImage: "trash")
             }
         }
+    }
+}
+
+// MARK: - Scale Sheet
+
+private struct ScaleSheetView: View {
+    let resourceName: String
+    @Binding var replicas: Int
+    let onScale: () -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Text("Scale \(resourceName)")
+                .font(.headline)
+
+            HStack {
+                Text("Replicas:")
+                TextField("", value: $replicas, format: .number)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 60)
+                Stepper("", value: $replicas, in: 0...100)
+                    .labelsHidden()
+            }
+
+            HStack {
+                Button("Cancel") {
+                    onCancel()
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Button("Scale") {
+                    onScale()
+                }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(24)
+        .frame(width: 300)
     }
 }

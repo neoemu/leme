@@ -119,4 +119,22 @@ enum ResourceKind: String, CaseIterable, Identifiable, Sendable, Hashable {
             return true
         }
     }
+
+    var isScalable: Bool {
+        switch self {
+        case .deployment, .statefulSet, .replicaSet:
+            return true
+        default:
+            return false
+        }
+    }
+
+    var isRestartable: Bool {
+        switch self {
+        case .deployment, .statefulSet, .daemonSet:
+            return true
+        default:
+            return false
+        }
+    }
 }

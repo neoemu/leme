@@ -32,10 +32,27 @@ struct NodeListView: View {
                 appState.yamlSource = ""
                 appState.openBottomPanel(mode: .yaml)
             },
+            onDelete: { resource in
+                Task {
+                    guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                    await viewModel.deleteResource(kind: .node, name: resource.name, namespace: resource.namespace, client: client)
+                }
+            },
+            onDownloadYAML: { resource in
+                Task {
+                    guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                    await viewModel.downloadResourceYAML(kind: .node, name: resource.name, namespace: resource.namespace, client: client)
+                }
+            },
             customCellRenderer: { column, resource in
                 nodeCellRenderer(column: column, resource: resource)
             }
         )
+        .alert("Delete Failed", isPresented: $viewModel.showDeleteError) {
+            Button("OK") {}
+        } message: {
+            Text(viewModel.deleteError ?? "Unknown error")
+        }
         .task {
             await loadData()
         }
