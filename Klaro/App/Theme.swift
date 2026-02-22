@@ -5,11 +5,8 @@ enum Theme {
 
     enum Colors {
         // Backgrounds
-        static let hotbarBackground = Color(nsColor: .controlBackgroundColor).opacity(0.5)
-        static let sidebarBackground = Color(nsColor: .windowBackgroundColor)
         static let contentBackground = Color(nsColor: .textBackgroundColor)
         static let bottomPanelBackground = Color(nsColor: .controlBackgroundColor)
-        static let detailPanelBackground = Color(nsColor: .windowBackgroundColor)
 
         // Status
         static let running = Color.green
@@ -88,13 +85,6 @@ enum Theme {
     // MARK: - Dimensions
 
     enum Dimensions {
-        static let hotbarWidth: CGFloat = 48
-        static let sidebarWidth: CGFloat = 220
-        static let sidebarMinWidth: CGFloat = 180
-        static let sidebarMaxWidth: CGFloat = 320
-        static let detailPanelMinWidth: CGFloat = 300
-        static let detailPanelIdealWidth: CGFloat = 420
-        static let detailPanelMaxWidth: CGFloat = 800
         static let bottomPanelMinHeight: CGFloat = 100
         static let bottomPanelMaxHeight: CGFloat = 600
         static let bottomPanelDefaultHeight: CGFloat = 250

@@ -25,12 +25,9 @@ struct ResourceDetailPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             panelHeader
-            Divider()
             tabBar
-            Divider()
             tabContent
         }
-        .background(Theme.Colors.detailPanelBackground)
     }
 
     // MARK: - Header

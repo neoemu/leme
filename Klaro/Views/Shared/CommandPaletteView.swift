@@ -22,9 +22,7 @@ struct CommandPaletteView: View {
             }
             .frame(width: 500)
             .frame(maxHeight: 400)
-            .background(.ultraThinMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .shadow(color: .black.opacity(0.4), radius: 30, y: 10)
+            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
             .padding(.top, 80)
             .frame(maxHeight: .infinity, alignment: .top)
         }

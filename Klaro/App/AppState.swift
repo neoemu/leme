@@ -1,15 +1,19 @@
 import SwiftUI
 
+enum SidebarSelection: Hashable, Sendable {
+    case dashboard
+    case unifiedWorkloads
+    case resource(ResourceKind)
+}
+
 @Observable
 final class AppState: @unchecked Sendable {
     var clusters: [ClusterConnection] = []
     var activeClusterID: UUID?
     var selectedNamespace: String?
-    var selectedResourceKind: ResourceKind = .pod
+    var sidebarSelection: SidebarSelection? = .dashboard
     var selectedResourceID: String?
     var isDetailPanelOpen: Bool = false
-    var showDashboard: Bool = true
-    var showUnifiedWorkloads: Bool = false
     var isBottomPanelOpen: Bool = false
     var bottomPanelMode: BottomPanelMode = .logs
     var bottomPanelHeight: CGFloat = 250
@@ -46,14 +50,38 @@ final class AppState: @unchecked Sendable {
         selectedNamespace
     }
 
+    // MARK: - Computed compat properties
+
+    var showDashboard: Bool {
+        get { sidebarSelection == .dashboard }
+        set {
+            if newValue { sidebarSelection = .dashboard }
+        }
+    }
+
+    var showUnifiedWorkloads: Bool {
+        get { sidebarSelection == .unifiedWorkloads }
+        set {
+            if newValue { sidebarSelection = .unifiedWorkloads }
+        }
+    }
+
+    var selectedResourceKind: ResourceKind {
+        get {
+            if case .resource(let kind) = sidebarSelection { return kind }
+            return .pod
+        }
+        set {
+            sidebarSelection = .resource(newValue)
+        }
+    }
+
     func selectCluster(_ id: UUID) {
         activeClusterID = id
         selectedNamespace = nil
-        selectedResourceKind = .pod
+        sidebarSelection = .dashboard
         selectedResourceID = nil
         isDetailPanelOpen = false
-        showDashboard = true
-        showUnifiedWorkloads = false
     }
 
     func selectResource(_ id: String?) {

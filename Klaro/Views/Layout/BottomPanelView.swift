@@ -17,8 +17,6 @@ struct BottomPanelView: View {
             // Tab bar
             tabBar
 
-            Divider()
-
             // Content area
             panelContent
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

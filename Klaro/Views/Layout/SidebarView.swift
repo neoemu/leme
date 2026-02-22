@@ -2,48 +2,131 @@ import SwiftUI
 
 struct SidebarView: View {
     @Environment(AppState.self) private var appState
-    @State private var hoveredKind: ResourceKind?
+    @Environment(ClusterViewModel.self) private var clusterViewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Cluster header
-            clusterHeader
-                .padding(Theme.Dimensions.padding)
+        @Bindable var appState = appState
 
-            Divider()
-
-            // Namespace filter
-            NamespaceFilterView()
+        VStack(spacing: 0) {
+            // Cluster selector (horizontal row of cluster icons)
+            clusterSelector
                 .padding(.horizontal, Theme.Dimensions.padding)
                 .padding(.vertical, Theme.Dimensions.spacing)
 
             Divider()
 
-            // Resource categories
-            ScrollView {
-                VStack(alignment: .leading, spacing: 2) {
-                    // Dashboard item
-                    dashboardItem
-                        .padding(.horizontal, Theme.Dimensions.padding)
-                        .padding(.vertical, 2)
+            // Cluster header + Namespace filter
+            if appState.activeCluster != nil {
+                clusterHeader
+                    .padding(.horizontal, Theme.Dimensions.padding)
+                    .padding(.top, Theme.Dimensions.spacing)
 
-                    Divider()
-                        .padding(.horizontal, Theme.Dimensions.padding)
-                        .padding(.vertical, 2)
+                NamespaceFilterView()
+                    .padding(.horizontal, Theme.Dimensions.padding)
+                    .padding(.vertical, Theme.Dimensions.spacing)
+            }
 
-                    ForEach(ResourceCategory.allCases) { category in
-                        categorySection(category)
+            // Resource navigation list
+            List(selection: $appState.sidebarSelection) {
+                Label("Cluster Dashboard", systemImage: "gauge.with.dots.needle.33percent")
+                    .tag(SidebarSelection.dashboard)
+
+                Label("All Workloads", systemImage: "square.grid.2x2")
+                    .tag(SidebarSelection.unifiedWorkloads)
+
+                ForEach(ResourceCategory.allCases) { category in
+                    Section(category.rawValue) {
+                        ForEach(category.resourceKinds) { kind in
+                            Label(kind.pluralName, systemImage: kind.icon)
+                                .tag(SidebarSelection.resource(kind))
+                        }
                     }
                 }
-                .padding(.vertical, Theme.Dimensions.spacing)
             }
+            .listStyle(.sidebar)
             .opacity(appState.activeCluster != nil ? 1.0 : 0.4)
             .allowsHitTesting(appState.activeCluster != nil)
         }
-        .frame(width: Theme.Dimensions.sidebarWidth)
-        .frame(maxHeight: .infinity)
-        .background(Theme.Colors.sidebarBackground)
+        .navigationTitle("Klaro")
+        .onChange(of: appState.sidebarSelection) { _, _ in
+            // Clear resource selection when navigating
+            appState.selectedResourceID = nil
+            appState.isDetailPanelOpen = false
+        }
     }
+
+    // MARK: - Cluster Selector
+
+    private var clusterSelector: some View {
+        HStack(spacing: Theme.Dimensions.spacing) {
+            ForEach(appState.clusters) { cluster in
+                Button {
+                    appState.selectCluster(cluster.id)
+                    if cluster.status == .disconnected {
+                        Task {
+                            await clusterViewModel.connect(cluster: cluster, appState: appState)
+                        }
+                    }
+                } label: {
+                    ZStack {
+                        Circle()
+                            .fill(appState.activeClusterID == cluster.id ? Theme.Colors.accent : Color.gray.opacity(0.3))
+                            .frame(width: 32, height: 32)
+                            .overlay(
+                                Circle()
+                                    .stroke(
+                                        cluster.status == .error ? Theme.Colors.failed : Color.clear,
+                                        lineWidth: 2
+                                    )
+                                    .frame(width: 36, height: 36)
+                            )
+                            .opacity(cluster.status == .connecting ? 0.7 : 1.0)
+                            .animation(
+                                cluster.status == .connecting
+                                    ? Animation.easeInOut(duration: 0.8).repeatForever(autoreverses: true)
+                                    : .default,
+                                value: cluster.status == .connecting
+                            )
+
+                        if cluster.status == .connecting {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Text(cluster.initials)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(appState.activeClusterID == cluster.id ? .white : .primary)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+                .help(clusterTooltip(for: cluster))
+                .contextMenu {
+                    if cluster.status == .connected {
+                        Button("Disconnect") {
+                            Task {
+                                await clusterViewModel.disconnect(clusterID: cluster.id, appState: appState)
+                            }
+                        }
+                        Button("Refresh Namespaces") {
+                            Task {
+                                await clusterViewModel.refreshNamespaces(for: cluster.id, appState: appState)
+                            }
+                        }
+                    } else {
+                        Button("Connect") {
+                            Task {
+                                await clusterViewModel.connect(cluster: cluster, appState: appState)
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer()
+        }
+    }
+
+    // MARK: - Cluster Header
 
     @ViewBuilder
     private var clusterHeader: some View {
@@ -65,10 +148,6 @@ struct SidebarView: View {
 
                 statusDot(for: cluster.status)
             }
-        } else {
-            Text("No Cluster Selected")
-                .font(Theme.Fonts.subtitle)
-                .foregroundStyle(Theme.Colors.secondaryText)
         }
     }
 
@@ -106,136 +185,12 @@ struct SidebarView: View {
         }
     }
 
-    private var dashboardItem: some View {
-        let isSelected = appState.showDashboard
-
-        return Button {
-            appState.showDashboard = true
-            appState.showUnifiedWorkloads = false
-            appState.selectedResourceID = nil
-            appState.isDetailPanelOpen = false
-        } label: {
-            HStack(spacing: Theme.Dimensions.smallSpacing) {
-                Image(systemName: "gauge.with.dots.needle.33percent")
-                    .frame(width: Theme.Dimensions.iconSize)
-                    .foregroundStyle(isSelected ? Theme.Colors.accent : .secondary)
-
-                Text("Cluster Dashboard")
-                    .font(Theme.Fonts.sidebarItem)
-                    .foregroundStyle(isSelected ? .primary : .secondary)
-
-                Spacer()
-            }
-            .padding(.vertical, 3)
-            .padding(.horizontal, Theme.Dimensions.spacing)
-            .background(
-                RoundedRectangle(cornerRadius: Theme.Dimensions.cornerRadius)
-                    .fill(isSelected ? Theme.Colors.accent.opacity(0.1) : .clear)
-            )
+    private func clusterTooltip(for cluster: ClusterConnection) -> String {
+        var text = cluster.displayName
+        text += " (\(cluster.status.rawValue))"
+        if cluster.status == .error, let errorMsg = cluster.errorMessage {
+            text += "\nError: \(errorMsg)"
         }
-        .buttonStyle(.plain)
-    }
-
-    private func categorySection(_ category: ResourceCategory) -> some View {
-        DisclosureGroup {
-            if category == .workloads {
-                allWorkloadsItem
-            }
-            ForEach(category.resourceKinds) { kind in
-                sidebarItem(for: kind)
-            }
-        } label: {
-            HStack {
-                Label(category.rawValue, systemImage: category.icon)
-                    .font(Theme.Fonts.sidebarHeader)
-                    .foregroundStyle(Theme.Colors.secondaryText)
-
-                Spacer()
-
-                Text("\(category.resourceKinds.count)")
-                    .font(Theme.Fonts.caption)
-                    .foregroundStyle(Theme.Colors.tertiaryText)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 1)
-                    .background(
-                        Capsule()
-                            .fill(Color.secondary.opacity(0.1))
-                    )
-            }
-        }
-        .padding(.horizontal, Theme.Dimensions.padding)
-        .padding(.vertical, 2)
-    }
-
-    private var allWorkloadsItem: some View {
-        let isSelected = appState.showUnifiedWorkloads
-
-        return Button {
-            appState.showDashboard = false
-            appState.showUnifiedWorkloads = true
-            appState.selectedResourceID = nil
-            appState.isDetailPanelOpen = false
-        } label: {
-            HStack(spacing: Theme.Dimensions.smallSpacing) {
-                Image(systemName: "square.grid.2x2")
-                    .frame(width: Theme.Dimensions.iconSize)
-                    .foregroundStyle(isSelected ? Theme.Colors.accent : .secondary)
-
-                Text("All Workloads")
-                    .font(Theme.Fonts.sidebarItem)
-                    .foregroundStyle(isSelected ? .primary : .secondary)
-
-                Spacer()
-            }
-            .padding(.vertical, 3)
-            .padding(.horizontal, Theme.Dimensions.spacing)
-            .background(
-                RoundedRectangle(cornerRadius: Theme.Dimensions.cornerRadius)
-                    .fill(isSelected ? Theme.Colors.accent.opacity(0.1) : .clear)
-            )
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func sidebarItem(for kind: ResourceKind) -> some View {
-        let isSelected = appState.selectedResourceKind == kind && !appState.showDashboard && !appState.showUnifiedWorkloads
-        let isHovered = hoveredKind == kind
-
-        return Button {
-            appState.selectedResourceKind = kind
-            appState.selectedResourceID = nil
-            appState.isDetailPanelOpen = false
-            appState.showDashboard = false
-            appState.showUnifiedWorkloads = false
-        } label: {
-            HStack(spacing: Theme.Dimensions.smallSpacing) {
-                Image(systemName: kind.icon)
-                    .frame(width: Theme.Dimensions.iconSize)
-                    .foregroundStyle(isSelected ? Theme.Colors.accent : .secondary)
-
-                Text(kind.pluralName)
-                    .font(Theme.Fonts.sidebarItem)
-                    .foregroundStyle(isSelected ? .primary : .secondary)
-
-                Spacer()
-            }
-            .padding(.vertical, 3)
-            .padding(.horizontal, Theme.Dimensions.spacing)
-            .background(
-                RoundedRectangle(cornerRadius: Theme.Dimensions.cornerRadius)
-                    .fill(
-                        isSelected
-                            ? Theme.Colors.accent.opacity(0.1)
-                            : isHovered
-                                ? Theme.Colors.hoverBackground
-                                : .clear
-                    )
-            )
-            .animation(Theme.Animations.hoverTransition, value: isHovered)
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering in
-            hoveredKind = hovering ? kind : nil
-        }
+        return text
     }
 }
