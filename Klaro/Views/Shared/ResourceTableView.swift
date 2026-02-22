@@ -452,6 +452,9 @@ struct ResourceTableView: View {
                 appState.selectResource(resource.id)
             }
         }
+        .onTapGesture(count: 2) {
+            appState.showResourceDetail(resource.id)
+        }
         .contextMenu {
             Button {
                 appState.showResourceDetail(resource.id)

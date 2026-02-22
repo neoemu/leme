@@ -21,21 +21,30 @@ struct MainLayout: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .animation(.easeInOut(duration: 0.2), value: appState.isBottomPanelOpen)
-            .overlay(alignment: .trailing) {
+            .overlay {
                 if appState.isDetailPanelOpen {
-                    ResizableInspectorDetailView(
-                        initialWidth: appState.inspectorDetailWidth,
-                        onResizeEnded: { finalWidth in
-                            var transaction = Transaction()
-                            transaction.disablesAnimations = true
-                            withTransaction(transaction) {
-                                appState.setInspectorDetailWidth(finalWidth, persist: true)
+                    ZStack(alignment: .trailing) {
+                        Color.black.opacity(0.001)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                appState.isDetailPanelOpen = false
+                                appState.selectedResourceID = nil
                             }
-                        }
-                    )
-                    .zIndex(1)
-                    .shadow(color: .black.opacity(0.25), radius: 6, x: -2, y: 0)
-                    .transition(.move(edge: .trailing))
+
+                        ResizableInspectorDetailView(
+                            initialWidth: appState.inspectorDetailWidth,
+                            onResizeEnded: { finalWidth in
+                                var transaction = Transaction()
+                                transaction.disablesAnimations = true
+                                withTransaction(transaction) {
+                                    appState.setInspectorDetailWidth(finalWidth, persist: true)
+                                }
+                            }
+                        )
+                        .zIndex(1)
+                        .shadow(color: .black.opacity(0.25), radius: 6, x: -2, y: 0)
+                        .transition(.move(edge: .trailing))
+                    }
                 }
             }
             .animation(.easeInOut(duration: 0.15), value: appState.isDetailPanelOpen)
@@ -97,9 +106,10 @@ private struct ResizableInspectorDetailView: View {
             resizeHandle
             InspectorDetailView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .background(Theme.Colors.contentBackground)
+                .background(.regularMaterial)
         }
         .frame(width: width)
+        .glassEffect(.regular, in: Rectangle())
         .onAppear {
             width = clamp(initialWidth)
         }
