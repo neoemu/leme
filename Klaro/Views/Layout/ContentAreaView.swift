@@ -42,9 +42,17 @@ struct ContentAreaView: View {
     @ViewBuilder
     private var mainContent: some View {
         if appState.activeCluster != nil {
-            resourceContent
-                .transition(.opacity)
-                .animation(Theme.Animations.contentTransition, value: appState.selectedResourceKind)
+            if appState.showDashboard {
+                ClusterDashboardView()
+                    .transition(.opacity)
+            } else if appState.showUnifiedWorkloads {
+                UnifiedWorkloadsView()
+                    .transition(.opacity)
+            } else {
+                resourceContent
+                    .transition(.opacity)
+                    .animation(Theme.Animations.contentTransition, value: appState.selectedResourceKind)
+            }
         } else {
             EmptyStateView(
                 icon: "server.rack",

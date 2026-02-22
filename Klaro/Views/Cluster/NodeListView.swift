@@ -7,99 +7,124 @@ struct NodeListView: View {
     @Environment(ClusterViewModel.self) private var clusterViewModel
 
     @State private var viewModel = ResourceListViewModel()
+    @State private var nodeCapacities: [String: MetricsService.NodeCapacity] = [:]
+    @State private var podCountsByNode: [String: Int] = [:]
+    @State private var resourceRequestsByNode: [String: MetricsService.NodeResourceUsage] = [:]
+
+    private let columns: [ResourceTableColumn] = [
+        ResourceTableColumn(title: "State", key: "status", width: 80, sortField: .status),
+        ResourceTableColumn(title: "Name", key: "name", sortField: .name),
+        ResourceTableColumn(title: "Roles", key: "roles", width: 100),
+        ResourceTableColumn(title: "Version", key: "version", width: 130),
+        ResourceTableColumn(title: "Int. IP", key: "internalIP", width: 120),
+        ResourceTableColumn(title: "OS", key: "os", width: 60),
+        ResourceTableColumn(title: "CPU", key: "cpuBar", width: 100),
+        ResourceTableColumn(title: "RAM", key: "ramBar", width: 100),
+        ResourceTableColumn(title: "Pods", key: "podsBar", width: 100),
+        ResourceTableColumn(title: "Age", key: "age", width: 60, sortField: .age),
+    ]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
-                .padding(.horizontal, Theme.Dimensions.padding)
-                .padding(.top, Theme.Dimensions.padding)
-
-            Divider()
-
-            if viewModel.isLoading && viewModel.resources.isEmpty {
-                ProgressView("Loading nodes...")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let errorMessage = viewModel.errorMessage {
-                EmptyStateView(
-                    icon: "exclamationmark.triangle",
-                    title: "Error Loading Nodes",
-                    message: errorMessage
-                )
-            } else if viewModel.filteredResources.isEmpty {
-                EmptyStateView(
-                    icon: "desktopcomputer",
-                    title: "No Nodes",
-                    message: "No nodes found in this cluster."
-                )
-            } else {
-                nodeTable
+        ResourceTableView(
+            columns: columns,
+            viewModel: viewModel,
+            onViewYAML: { resource in
+                appState.yamlSource = ""
+                appState.openBottomPanel(mode: .yaml)
+            },
+            customCellRenderer: { column, resource in
+                nodeCellRenderer(column: column, resource: resource)
             }
-        }
+        )
         .task {
             await loadData()
         }
     }
 
-    // MARK: - Header
+    // MARK: - Custom Cell Renderer
 
-    private var header: some View {
-        HStack {
-            Image(systemName: ResourceKind.node.icon)
-                .font(.system(size: 14))
-                .foregroundStyle(Theme.Colors.accent)
-
-            Text("Nodes")
-                .font(Theme.Fonts.title)
-
-            Spacer()
-
-            if viewModel.isLoading {
-                ProgressView()
-                    .controlSize(.small)
-            }
-
-            Text("\(viewModel.filteredResources.count) nodes")
-                .font(Theme.Fonts.caption)
-                .foregroundStyle(Theme.Colors.secondaryText)
+    private func nodeCellRenderer(column: ResourceTableColumn, resource: ResourceItem) -> AnyView? {
+        switch column.key {
+        case "cpuBar":
+            return cpuBarView(for: resource)
+        case "ramBar":
+            return ramBarView(for: resource)
+        case "podsBar":
+            return podsBarView(for: resource)
+        default:
+            return nil
         }
     }
 
-    // MARK: - Table
+    private func cpuBarView(for resource: ResourceItem) -> AnyView {
+        let nodeName = resource.name
+        let capacity = nodeCapacities[nodeName]
+        let requests = resourceRequestsByNode[nodeName]
 
-    private var nodeTable: some View {
-        Table(viewModel.filteredResources, selection: $viewModel.selectedResourceID) {
-            TableColumn("Name") { node in
-                Text(node.name)
-                    .font(Theme.Fonts.monoSmall)
-            }
-            .width(min: 120, ideal: 200)
-
-            TableColumn("Status") { node in
-                StatusBadge(status: node.status)
-            }
-            .width(min: 60, ideal: 100)
-
-            TableColumn("Roles") { node in
-                Text(node.extraColumns["roles"] ?? "<none>")
-                    .font(Theme.Fonts.tableCell)
-            }
-            .width(min: 80, ideal: 120)
-
-            TableColumn("Age") { node in
-                if let age = node.age {
-                    AgeLabel(date: age)
-                } else {
-                    Text("-")
-                        .font(Theme.Fonts.monoSmall)
-                        .foregroundStyle(Theme.Colors.tertiaryText)
-                }
-            }
-            .width(min: 40, ideal: 60)
+        if let cap = capacity, cap.cpuCores > 0 {
+            let used = requests?.cpuRequested ?? 0
+            return AnyView(
+                CapacityBar(
+                    label: "CPU",
+                    used: used,
+                    total: cap.cpuCores,
+                    unit: "cores",
+                    compact: true
+                )
+            )
         }
-        .tableStyle(.inset(alternatesRowBackgrounds: true))
-        .onChange(of: viewModel.selectedResourceID) { _, newValue in
-            appState.selectResource(newValue)
+        return AnyView(
+            Text("-")
+                .font(Theme.Fonts.caption)
+                .foregroundStyle(Theme.Colors.tertiaryText)
+        )
+    }
+
+    private func ramBarView(for resource: ResourceItem) -> AnyView {
+        let nodeName = resource.name
+        let capacity = nodeCapacities[nodeName]
+        let requests = resourceRequestsByNode[nodeName]
+
+        if let cap = capacity, cap.memoryGiB > 0 {
+            let used = requests?.memoryRequestedGiB ?? 0
+            return AnyView(
+                CapacityBar(
+                    label: "RAM",
+                    used: used,
+                    total: cap.memoryGiB,
+                    unit: "GiB",
+                    compact: true
+                )
+            )
         }
+        return AnyView(
+            Text("-")
+                .font(Theme.Fonts.caption)
+                .foregroundStyle(Theme.Colors.tertiaryText)
+        )
+    }
+
+    private func podsBarView(for resource: ResourceItem) -> AnyView {
+        let nodeName = resource.name
+        let capacity = nodeCapacities[nodeName]
+        let podCount = podCountsByNode[nodeName] ?? 0
+
+        if let cap = capacity, cap.maxPods > 0 {
+            return AnyView(
+                CapacityBar(
+                    label: "Pods",
+                    used: Double(podCount),
+                    total: Double(cap.maxPods),
+                    unit: "",
+                    compact: true
+                )
+            )
+        }
+        return AnyView(
+            Text("-")
+                .font(Theme.Fonts.caption)
+                .foregroundStyle(Theme.Colors.tertiaryText)
+        )
     }
 
     // MARK: - Data Loading
@@ -109,13 +134,42 @@ struct NodeListView: View {
             return
         }
 
-        await viewModel.loadClusterScopedResources(
-            core.v1.Node.self,
-            kind: .node,
-            client: client,
-            mapper: nodeToResourceItem
-        )
+        let service = KubernetesService(client: client)
+        let metricsService = MetricsService(client: client)
+
+        // Load nodes
+        viewModel.isLoading = true
+        viewModel.errorMessage = nil
+
+        do {
+            let nodeList = try await service.listClusterScoped(core.v1.Node.self)
+
+            // Extract capacity from each node
+            var capacities: [String: MetricsService.NodeCapacity] = [:]
+            for node in nodeList.items {
+                let name = node.name ?? ""
+                capacities[name] = MetricsService.extractNodeCapacity(from: node)
+            }
+            nodeCapacities = capacities
+
+            // Map nodes to ResourceItem with enriched data
+            viewModel.resources = nodeList.items.map { node in
+                nodeToResourceItem(node)
+            }
+        } catch {
+            viewModel.errorMessage = error.localizedDescription
+        }
+        viewModel.isLoading = false
+
+        // Load pod counts and resource requests in parallel
+        async let podCounts = metricsService.podCountByNode()
+        async let resourceRequests = metricsService.resourceRequestsByNode()
+
+        podCountsByNode = await podCounts
+        resourceRequestsByNode = await resourceRequests
     }
+
+    // MARK: - Node Mapper
 
     private nonisolated func nodeToResourceItem(_ node: core.v1.Node) -> ResourceItem {
         // Determine status from conditions
@@ -141,8 +195,25 @@ struct NodeListView: View {
         }
         let rolesString = roles.isEmpty ? "<none>" : roles.sorted().joined(separator: ", ")
 
+        // Extract node info
+        let nodeInfo = node.status?.nodeInfo
+        let version = nodeInfo?.kubeletVersion ?? ""
+        let os = nodeInfo?.operatingSystem ?? ""
+
+        // Extract Internal IP
+        let addresses = node.status?.addresses ?? []
+        let internalIP = addresses.first { $0.type == "InternalIP" }?.address ?? ""
+
+        // Extract taints for tooltip
+        let taints = node.spec?.taints ?? []
+        let taintsStr = taints.map { "\($0.key ?? "")=\($0.value ?? ""):\($0.effect ?? "")" }.joined(separator: ", ")
+
         var extra: [String: String] = [:]
         extra["roles"] = rolesString
+        extra["version"] = version
+        extra["internalIP"] = internalIP
+        extra["os"] = os
+        extra["taints"] = taintsStr
 
         return ResourceItem(
             id: node.name ?? UUID().uuidString,

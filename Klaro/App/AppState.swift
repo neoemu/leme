@@ -8,6 +8,8 @@ final class AppState: @unchecked Sendable {
     var selectedResourceKind: ResourceKind = .pod
     var selectedResourceID: String?
     var isDetailPanelOpen: Bool = false
+    var showDashboard: Bool = true
+    var showUnifiedWorkloads: Bool = false
     var isBottomPanelOpen: Bool = false
     var bottomPanelMode: BottomPanelMode = .logs
     var bottomPanelHeight: CGFloat = 250
@@ -50,6 +52,8 @@ final class AppState: @unchecked Sendable {
         selectedResourceKind = .pod
         selectedResourceID = nil
         isDetailPanelOpen = false
+        showDashboard = true
+        showUnifiedWorkloads = false
     }
 
     func selectResource(_ id: String?) {

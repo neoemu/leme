@@ -28,6 +28,12 @@ enum Theme {
         static let cardBorder = Color(nsColor: .separatorColor).opacity(0.3)
         static let hoverBackground = Color.primary.opacity(0.04)
 
+        // Capacity
+        static let capacityLow = Color.green
+        static let capacityMedium = Color.yellow
+        static let capacityHigh = Color.red
+        static let capacityBackground = Color.secondary.opacity(0.15)
+
         // UI
         static let accent = Color.accentColor
         static let separator = Color(nsColor: .separatorColor)
@@ -101,5 +107,9 @@ enum Theme {
         static let spacing: CGFloat = 8
         static let smallSpacing: CGFloat = 4
         static let padding: CGFloat = 12
+        static let capacityBarHeight: CGFloat = 8
+        static let miniBarHeight: CGFloat = 6
+        static let miniBarWidth: CGFloat = 50
+        static let dashboardCardMinWidth: CGFloat = 150
     }
 }

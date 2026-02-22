@@ -22,6 +22,15 @@ struct SidebarView: View {
             // Resource categories
             ScrollView {
                 VStack(alignment: .leading, spacing: 2) {
+                    // Dashboard item
+                    dashboardItem
+                        .padding(.horizontal, Theme.Dimensions.padding)
+                        .padding(.vertical, 2)
+
+                    Divider()
+                        .padding(.horizontal, Theme.Dimensions.padding)
+                        .padding(.vertical, 2)
+
                     ForEach(ResourceCategory.allCases) { category in
                         categorySection(category)
                     }
@@ -97,8 +106,41 @@ struct SidebarView: View {
         }
     }
 
+    private var dashboardItem: some View {
+        let isSelected = appState.showDashboard
+
+        return Button {
+            appState.showDashboard = true
+            appState.showUnifiedWorkloads = false
+            appState.selectedResourceID = nil
+            appState.isDetailPanelOpen = false
+        } label: {
+            HStack(spacing: Theme.Dimensions.smallSpacing) {
+                Image(systemName: "gauge.with.dots.needle.33percent")
+                    .frame(width: Theme.Dimensions.iconSize)
+                    .foregroundStyle(isSelected ? Theme.Colors.accent : .secondary)
+
+                Text("Cluster Dashboard")
+                    .font(Theme.Fonts.sidebarItem)
+                    .foregroundStyle(isSelected ? .primary : .secondary)
+
+                Spacer()
+            }
+            .padding(.vertical, 3)
+            .padding(.horizontal, Theme.Dimensions.spacing)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.Dimensions.cornerRadius)
+                    .fill(isSelected ? Theme.Colors.accent.opacity(0.1) : .clear)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
     private func categorySection(_ category: ResourceCategory) -> some View {
         DisclosureGroup {
+            if category == .workloads {
+                allWorkloadsItem
+            }
             ForEach(category.resourceKinds) { kind in
                 sidebarItem(for: kind)
             }
@@ -125,14 +167,46 @@ struct SidebarView: View {
         .padding(.vertical, 2)
     }
 
+    private var allWorkloadsItem: some View {
+        let isSelected = appState.showUnifiedWorkloads
+
+        return Button {
+            appState.showDashboard = false
+            appState.showUnifiedWorkloads = true
+            appState.selectedResourceID = nil
+            appState.isDetailPanelOpen = false
+        } label: {
+            HStack(spacing: Theme.Dimensions.smallSpacing) {
+                Image(systemName: "square.grid.2x2")
+                    .frame(width: Theme.Dimensions.iconSize)
+                    .foregroundStyle(isSelected ? Theme.Colors.accent : .secondary)
+
+                Text("All Workloads")
+                    .font(Theme.Fonts.sidebarItem)
+                    .foregroundStyle(isSelected ? .primary : .secondary)
+
+                Spacer()
+            }
+            .padding(.vertical, 3)
+            .padding(.horizontal, Theme.Dimensions.spacing)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.Dimensions.cornerRadius)
+                    .fill(isSelected ? Theme.Colors.accent.opacity(0.1) : .clear)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
     private func sidebarItem(for kind: ResourceKind) -> some View {
-        let isSelected = appState.selectedResourceKind == kind
+        let isSelected = appState.selectedResourceKind == kind && !appState.showDashboard && !appState.showUnifiedWorkloads
         let isHovered = hoveredKind == kind
 
         return Button {
             appState.selectedResourceKind = kind
             appState.selectedResourceID = nil
             appState.isDetailPanelOpen = false
+            appState.showDashboard = false
+            appState.showUnifiedWorkloads = false
         } label: {
             HStack(spacing: Theme.Dimensions.smallSpacing) {
                 Image(systemName: kind.icon)
