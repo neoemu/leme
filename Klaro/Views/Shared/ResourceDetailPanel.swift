@@ -17,10 +17,18 @@ enum ResourceDetailTab: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+enum YAMLDisplayMode: String, CaseIterable, Identifiable, Sendable {
+    case clean = "Clean"
+    case raw = "Raw"
+
+    var id: String { rawValue }
+}
+
 struct ResourceDetailPanel: View {
     @Environment(AppState.self) private var appState
     @Bindable var viewModel: ResourceDetailViewModel
     @State private var selectedTab: ResourceDetailTab = .overview
+    @State private var yamlDisplayMode: YAMLDisplayMode = .clean
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -159,9 +167,9 @@ struct ResourceDetailPanel: View {
                     }
                 }
 
-                if !viewModel.annotations.isEmpty {
+                if !viewModel.filteredAnnotations.isEmpty {
                     cardSection(title: "Annotations") {
-                        ForEach(Array(viewModel.annotations.sorted(by: { $0.key < $1.key })), id: \.key) { key, value in
+                        ForEach(Array(viewModel.filteredAnnotations.sorted(by: { $0.key < $1.key })), id: \.key) { key, value in
                             detailRow(key: key, value: value)
                         }
                     }
@@ -227,25 +235,45 @@ struct ResourceDetailPanel: View {
 
     @ViewBuilder
     private var yamlTab: some View {
-        if viewModel.resourceYAML.isEmpty {
-            VStack(spacing: Theme.Dimensions.spacing) {
-                Image(systemName: "doc.plaintext")
-                    .font(.system(size: 24))
-                    .foregroundStyle(Theme.Colors.tertiaryText)
-                Text("No YAML available")
-                    .font(Theme.Fonts.caption)
-                    .foregroundStyle(Theme.Colors.secondaryText)
+        let displayedYAML = yamlDisplayMode == .clean ? viewModel.cleanResourceYAML : viewModel.resourceYAML
+
+        VStack(spacing: 0) {
+            HStack {
+                Picker("YAML Mode", selection: $yamlDisplayMode) {
+                    ForEach(YAMLDisplayMode.allCases) { mode in
+                        Text(mode.rawValue).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 150)
+
+                Spacer()
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
-            CodeEditor(
-                source: .constant(viewModel.resourceYAML),
-                language: .yaml,
-                theme: .ocean,
-                flags: [.selectable],
-                indentStyle: .softTab(width: 2)
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.horizontal, Theme.Dimensions.padding)
+            .padding(.vertical, Theme.Dimensions.smallSpacing)
+
+            Divider()
+
+            if displayedYAML.isEmpty {
+                VStack(spacing: Theme.Dimensions.spacing) {
+                    Image(systemName: "doc.plaintext")
+                        .font(.system(size: 24))
+                        .foregroundStyle(Theme.Colors.tertiaryText)
+                    Text("No YAML available")
+                        .font(Theme.Fonts.caption)
+                        .foregroundStyle(Theme.Colors.secondaryText)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                CodeEditor(
+                    source: .constant(displayedYAML),
+                    language: .yaml,
+                    theme: .ocean,
+                    flags: [.selectable],
+                    indentStyle: .softTab(width: 2)
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         }
     }
 
