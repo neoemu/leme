@@ -7,6 +7,7 @@ final class PodLogsViewModel {
 
     // MARK: - Properties
 
+    let id = UUID()
     var logLines: [String] = []
     var isFollowing: Bool = true
     var isStreaming: Bool = false
@@ -27,6 +28,13 @@ final class PodLogsViewModel {
         guard !searchText.isEmpty else { return logLines }
         let query = searchText.lowercased()
         return logLines.filter { $0.lowercased().contains(query) }
+    }
+
+    var tabTitle: String {
+        if let container = selectedContainer, !container.isEmpty {
+            return "\(podName):\(container)"
+        }
+        return podName
     }
 
     // MARK: - Initialization

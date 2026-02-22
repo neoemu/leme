@@ -37,11 +37,13 @@ final class AppState: @unchecked Sendable {
     var logTargetPodName: String?
     var logTargetNamespace: String?
     var logTargetContainer: String?
+    var pendingPodLogsRequestID: UUID?
 
     // Terminal exec target
     var execTargetPodName: String?
     var execTargetNamespace: String?
     var execTargetContainer: String?
+    var pendingPodExecRequestID: UUID?
 
     // YAML editor source
     var yamlSource: String = ""
@@ -131,6 +133,22 @@ final class AppState: @unchecked Sendable {
         isYAMLEditorOpen = false
         bottomPanelMode = mode
         isBottomPanelOpen = true
+    }
+
+    func requestPodLogs(podName: String, namespace: String, container: String? = nil) {
+        logTargetPodName = podName
+        logTargetNamespace = namespace
+        logTargetContainer = container
+        pendingPodLogsRequestID = UUID()
+        openBottomPanel(mode: .logs)
+    }
+
+    func requestPodExec(podName: String, namespace: String, container: String? = nil) {
+        execTargetPodName = podName
+        execTargetNamespace = namespace
+        execTargetContainer = container
+        pendingPodExecRequestID = UUID()
+        openBottomPanel(mode: .terminal)
     }
 
     func setInspectorDetailWidth(_ width: CGFloat, persist: Bool = true) {

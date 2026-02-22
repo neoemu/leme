@@ -4,7 +4,7 @@ import Foundation
 
 enum TerminalSessionType: Sendable, Hashable {
     case local
-    case podExec(podName: String, namespace: String, container: String)
+    case podExec(podName: String, namespace: String, container: String?)
 }
 
 // MARK: - TerminalSession
@@ -49,7 +49,7 @@ final class TerminalViewModel {
     func createPodExecSession(
         podName: String,
         namespace: String,
-        container: String,
+        container: String?,
         kubeContext: String?
     ) -> TerminalSession {
         let title = podName

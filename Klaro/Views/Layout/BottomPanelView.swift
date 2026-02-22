@@ -4,8 +4,10 @@ import SwiftUI
 struct BottomPanelView: View {
     @Environment(AppState.self) private var appState
     @Environment(ClusterViewModel.self) private var clusterViewModel
-    @State private var podLogsViewModel: PodLogsViewModel?
+    @State private var logSessions: [PodLogsViewModel] = []
+    @State private var activeLogSessionID: UUID?
     @State private var terminalViewModel = TerminalViewModel()
+    @State private var handledPodExecRequestID: UUID?
 
     var body: some View {
         @Bindable var appState = appState
@@ -25,24 +27,37 @@ struct BottomPanelView: View {
         .background(Theme.Colors.bottomPanelBackground)
         .onChange(of: appState.bottomPanelMode) { oldValue, newValue in
             if oldValue == .logs && newValue != .logs {
-                podLogsViewModel?.stopStreaming()
+                stopAllLogStreaming()
             }
             if newValue == .logs {
-                startLogsIfNeeded()
+                if appState.pendingPodLogsRequestID != nil {
+                    startLogsIfNeeded()
+                } else {
+                    resumeActiveLogStreamingIfNeeded()
+                }
+            } else if newValue == .terminal {
+                startPodExecIfNeeded()
             }
         }
-        .onChange(of: appState.logTargetPodName) { _, _ in
-            if appState.bottomPanelMode == .logs {
-                startLogsIfNeeded()
-            }
+        .onChange(of: appState.pendingPodLogsRequestID) { _, _ in
+            startLogsIfNeeded()
+        }
+        .onChange(of: appState.pendingPodExecRequestID) { _, _ in
+            startPodExecIfNeeded()
         }
         .onAppear {
             if appState.bottomPanelMode == .logs {
-                startLogsIfNeeded()
+                if appState.pendingPodLogsRequestID != nil {
+                    startLogsIfNeeded()
+                } else {
+                    resumeActiveLogStreamingIfNeeded()
+                }
+            } else if appState.bottomPanelMode == .terminal {
+                startPodExecIfNeeded()
             }
         }
         .onDisappear {
-            podLogsViewModel?.stopStreaming()
+            stopAllLogStreaming()
             terminalViewModel.closeAllSessions()
         }
     }
@@ -82,12 +97,14 @@ struct BottomPanelView: View {
             // Terminal session tabs and controls (shown when terminal mode is active)
             if appState.bottomPanelMode == .terminal {
                 terminalSessionTabs
+            } else if appState.bottomPanelMode == .logs {
+                logSessionTabs
             }
 
             Spacer()
 
             // Pod name label for logs tab
-            if appState.bottomPanelMode == .logs, let vm = podLogsViewModel {
+            if appState.bottomPanelMode == .logs, let vm = activeLogSession {
                 Text("\(vm.namespace)/\(vm.podName)")
                     .font(Theme.Fonts.monoSmall)
                     .foregroundStyle(Theme.Colors.secondaryText)
@@ -98,7 +115,7 @@ struct BottomPanelView: View {
             // Close button
             Button {
                 appState.isBottomPanelOpen = false
-                podLogsViewModel?.stopStreaming()
+                stopAllLogStreaming()
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 10))
@@ -108,6 +125,52 @@ struct BottomPanelView: View {
             .padding(.trailing, Theme.Dimensions.padding)
         }
         .padding(.vertical, 4)
+    }
+
+    // MARK: - Log Session Tabs
+
+    private var logSessionTabs: some View {
+        HStack(spacing: 0) {
+            Divider()
+                .frame(height: 16)
+                .padding(.horizontal, Theme.Dimensions.spacing)
+
+            ForEach(logSessions, id: \.id) { session in
+                logSessionTab(for: session)
+            }
+        }
+    }
+
+    private func logSessionTab(for session: PodLogsViewModel) -> some View {
+        let isActive = activeLogSessionID == session.id
+
+        return HStack(spacing: Theme.Dimensions.smallSpacing) {
+            Image(systemName: "doc.text.magnifyingglass")
+                .font(.system(size: 9))
+            Text(session.tabTitle)
+                .font(Theme.Fonts.caption)
+                .lineLimit(1)
+
+            Button {
+                closeLogSession(id: session.id)
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 8))
+                    .foregroundStyle(.tertiary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Dimensions.cornerRadius)
+                .fill(isActive ? Theme.Colors.accent.opacity(0.1) : .clear)
+        )
+        .foregroundStyle(isActive ? Theme.Colors.accent : .secondary)
+        .onTapGesture {
+            activeLogSessionID = session.id
+            startStreamingIfNeeded(for: session)
+        }
     }
 
     // MARK: - Terminal Session Tabs
@@ -134,14 +197,13 @@ struct BottomPanelView: View {
                 }
 
                 if let podName = appState.execTargetPodName,
-                   let namespace = appState.execTargetNamespace,
-                   let container = appState.execTargetContainer {
+                   let namespace = appState.execTargetNamespace {
                     Button {
                         let contextName = appState.activeCluster?.contextName
                         terminalViewModel.createPodExecSession(
                             podName: podName,
                             namespace: namespace,
-                            container: container,
+                            container: appState.execTargetContainer,
                             kubeContext: contextName
                         )
                     } label: {
@@ -223,12 +285,13 @@ struct BottomPanelView: View {
     private var panelContent: some View {
         switch appState.bottomPanelMode {
         case .logs:
-            if let vm = podLogsViewModel {
+            if let vm = activeLogSession {
                 LogViewerView(viewModel: vm)
+                    .id(vm.id)
             } else {
                 placeholderContent(
                     icon: "doc.text.magnifyingglass",
-                    text: "Select a pod and choose View Logs to stream logs"
+                    text: "Select a pod and choose View Logs to open a log tab"
                 )
             }
         case .terminal:
@@ -299,29 +362,42 @@ struct BottomPanelView: View {
 
     // MARK: - Log Streaming
 
+    private var activeLogSession: PodLogsViewModel? {
+        guard let id = activeLogSessionID else { return logSessions.first }
+        return logSessions.first { $0.id == id }
+    }
+
     private func startLogsIfNeeded() {
         guard let podName = appState.logTargetPodName,
-              let namespace = appState.logTargetNamespace else {
+              let namespace = appState.logTargetNamespace,
+              appState.bottomPanelMode == .logs else {
             return
         }
+        let container = appState.logTargetContainer
 
-        // If already streaming the same pod, do nothing
-        if let existing = podLogsViewModel,
-           existing.podName == podName,
-           existing.namespace == namespace,
-           existing.isStreaming {
+        if let existing = logSessions.first(where: { session in
+            session.podName == podName &&
+            session.namespace == namespace &&
+            session.selectedContainer == container
+        }) {
+            activeLogSessionID = existing.id
+            startStreamingIfNeeded(for: existing)
+            appState.pendingPodLogsRequestID = nil
             return
         }
-
-        // Stop any existing stream
-        podLogsViewModel?.stopStreaming()
 
         let vm = PodLogsViewModel(podName: podName, namespace: namespace)
-        if let container = appState.logTargetContainer {
+        if let container {
             vm.selectedContainer = container
         }
-        podLogsViewModel = vm
+        logSessions.append(vm)
+        activeLogSessionID = vm.id
+        startStreamingIfNeeded(for: vm)
+        appState.pendingPodLogsRequestID = nil
+    }
 
+    private func startStreamingIfNeeded(for vm: PodLogsViewModel) {
+        guard !vm.isStreaming else { return }
         Task {
             do {
                 guard let client = try await clusterViewModel.clientForActiveCluster(appState: appState) else {
@@ -333,5 +409,70 @@ struct BottomPanelView: View {
                 vm.errorMessage = error.localizedDescription
             }
         }
+    }
+
+    private func stopAllLogStreaming() {
+        for session in logSessions {
+            session.stopStreaming()
+        }
+    }
+
+    private func resumeActiveLogStreamingIfNeeded() {
+        if let active = activeLogSession {
+            startStreamingIfNeeded(for: active)
+            return
+        }
+
+        if let first = logSessions.first {
+            activeLogSessionID = first.id
+            startStreamingIfNeeded(for: first)
+        }
+    }
+
+    private func closeLogSession(id: UUID) {
+        guard let index = logSessions.firstIndex(where: { $0.id == id }) else { return }
+        let session = logSessions.remove(at: index)
+        session.stopStreaming()
+
+        if activeLogSessionID == id {
+            activeLogSessionID = logSessions.last?.id
+            if appState.bottomPanelMode == .logs, let active = activeLogSession {
+                startStreamingIfNeeded(for: active)
+            }
+        }
+    }
+
+    private func startPodExecIfNeeded() {
+        guard appState.bottomPanelMode == .terminal,
+              let requestID = appState.pendingPodExecRequestID,
+              requestID != handledPodExecRequestID,
+              let podName = appState.execTargetPodName,
+              let namespace = appState.execTargetNamespace else {
+            return
+        }
+
+        let container = appState.execTargetContainer
+
+        if let existing = terminalViewModel.sessions.first(where: { session in
+            if case .podExec(let existingPod, let existingNamespace, let existingContainer) = session.type {
+                return existingPod == podName &&
+                    existingNamespace == namespace &&
+                    existingContainer == container
+            }
+            return false
+        }) {
+            terminalViewModel.activeSessionID = existing.id
+        } else {
+            let contextName = appState.activeCluster?.contextName
+            terminalViewModel.createPodExecSession(
+                podName: podName,
+                namespace: namespace,
+                container: container,
+                kubeContext: contextName
+            )
+        }
+
+        handledPodExecRequestID = requestID
+        appState.pendingPodExecRequestID = nil
     }
 }

@@ -3,6 +3,7 @@ import SwiftUI
 import SwiftTerm
 
 struct TerminalContainerView: NSViewRepresentable {
+    @AppStorage("kubeconfigPath") private var kubeconfigPath = Constants.defaultKubeconfigPath
     let session: TerminalSession
     let kubeContext: String?
 
@@ -15,15 +16,11 @@ struct TerminalContainerView: NSViewRepresentable {
         tv.font = monoFont
         tv.nativeBackgroundColor = NSColor(red: 0.12, green: 0.12, blue: 0.14, alpha: 1.0)
         tv.nativeForegroundColor = NSColor(red: 0.85, green: 0.85, blue: 0.85, alpha: 1.0)
+        let environment = buildProcessEnvironment()
 
         // Start the appropriate process based on session type
         switch session.type {
         case .local:
-            var environment = Terminal.getEnvironmentVariables(termName: "xterm-256color")
-            if let ctx = kubeContext {
-                // Add KUBECONFIG hint if context is provided
-                environment.append("KUBECONFIG=\(ctx)")
-            }
             tv.startProcess(
                 executable: "/bin/zsh",
                 args: ["-l"],
@@ -37,9 +34,11 @@ struct TerminalContainerView: NSViewRepresentable {
             if let ctx = kubeContext {
                 args.append(contentsOf: ["--context", ctx])
             }
-            args.append(contentsOf: ["-c", container, "--", "/bin/sh"])
+            if let container, !container.isEmpty {
+                args.append(contentsOf: ["-c", container])
+            }
+            args.append(contentsOf: ["--", "/bin/sh"])
 
-            let environment = Terminal.getEnvironmentVariables(termName: "xterm-256color")
             tv.startProcess(
                 executable: kubectlPath,
                 args: args,
@@ -70,6 +69,55 @@ struct TerminalContainerView: NSViewRepresentable {
             }
         }
         // Fallback: assume it is on PATH and let the process fail with a clear error
-        return "/usr/local/bin/kubectl"
+        return "kubectl"
+    }
+
+    private func buildProcessEnvironment() -> [String] {
+        var env = ProcessInfo.processInfo.environment
+
+        // Merge SwiftTerm defaults (TERM, etc.) while keeping host environment values.
+        for entry in Terminal.getEnvironmentVariables(termName: "xterm-256color") {
+            guard let separator = entry.firstIndex(of: "=") else { continue }
+            let key = String(entry[..<separator])
+            let value = String(entry[entry.index(after: separator)...])
+            if env[key] == nil {
+                env[key] = value
+            }
+        }
+
+        if env["HOME"]?.isEmpty != false {
+            env["HOME"] = NSHomeDirectory()
+        }
+
+        let currentPath = env["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
+        env["PATH"] = enrichedPath(from: currentPath)
+
+        let expandedKubeconfigPath = (kubeconfigPath as NSString).expandingTildeInPath
+        if env["KUBECONFIG"]?.isEmpty != false,
+           !expandedKubeconfigPath.isEmpty,
+           FileManager.default.fileExists(atPath: expandedKubeconfigPath) {
+            env["KUBECONFIG"] = expandedKubeconfigPath
+        }
+
+        return env.map { "\($0.key)=\($0.value)" }
+    }
+
+    private func enrichedPath(from currentPath: String) -> String {
+        let requiredPaths = [
+            "/usr/local/bin",
+            "/opt/homebrew/bin",
+            "/opt/homebrew/sbin",
+            "/opt/local/bin",
+            "/usr/bin",
+            "/bin",
+            "/usr/sbin",
+            "/sbin",
+        ]
+        let existingPaths = currentPath
+            .split(separator: ":")
+            .map(String.init)
+        let existingSet = Set(existingPaths)
+        let missingPaths = requiredPaths.filter { !existingSet.contains($0) }
+        return (missingPaths + existingPaths).joined(separator: ":")
     }
 }

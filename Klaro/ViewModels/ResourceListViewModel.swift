@@ -636,6 +636,7 @@ final class ResourceListViewModel {
         extra["restarts"] = "\(restarts)"
         extra["node"] = pod.spec?.nodeName ?? ""
         extra["ip"] = pod.status?.podIP ?? ""
+        extra["container"] = pod.spec?.containers.first?.name ?? ""
 
         return ResourceItem(
             id: "\(pod.metadata?.namespace ?? "")/\(pod.name ?? "")",

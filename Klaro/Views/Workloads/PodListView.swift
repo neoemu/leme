@@ -25,15 +25,27 @@ struct PodListView: View {
                 appState.selectResource(resource.id)
                 let parts = resource.id.split(separator: "/", maxSplits: 1)
                 if parts.count == 2 {
-                    appState.logTargetNamespace = String(parts[0])
-                    appState.logTargetPodName = String(parts[1])
-                    appState.logTargetContainer = nil
+                    appState.requestPodLogs(
+                        podName: String(parts[1]),
+                        namespace: String(parts[0]),
+                        container: nil
+                    )
+                } else {
+                    appState.openBottomPanel(mode: .logs)
                 }
-                appState.openBottomPanel(mode: .logs)
             },
             onShell: { resource in
                 appState.selectResource(resource.id)
-                appState.openBottomPanel(mode: .terminal)
+                let namespace = resource.namespace ?? appState.selectedNamespace ?? "default"
+                let container: String? = {
+                    guard let value = resource.extraColumns["container"], !value.isEmpty else { return nil }
+                    return value
+                }()
+                appState.requestPodExec(
+                    podName: resource.name,
+                    namespace: namespace,
+                    container: container
+                )
             },
             onViewYAML: { resource in
                 Task {
