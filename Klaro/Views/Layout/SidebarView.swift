@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SidebarView: View {
     @Environment(AppState.self) private var appState
+    @State private var hoveredKind: ResourceKind?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -125,7 +126,10 @@ struct SidebarView: View {
     }
 
     private func sidebarItem(for kind: ResourceKind) -> some View {
-        Button {
+        let isSelected = appState.selectedResourceKind == kind
+        let isHovered = hoveredKind == kind
+
+        return Button {
             appState.selectedResourceKind = kind
             appState.selectedResourceID = nil
             appState.isDetailPanelOpen = false
@@ -133,11 +137,11 @@ struct SidebarView: View {
             HStack(spacing: Theme.Dimensions.smallSpacing) {
                 Image(systemName: kind.icon)
                     .frame(width: Theme.Dimensions.iconSize)
-                    .foregroundStyle(appState.selectedResourceKind == kind ? Theme.Colors.accent : .secondary)
+                    .foregroundStyle(isSelected ? Theme.Colors.accent : .secondary)
 
                 Text(kind.pluralName)
                     .font(Theme.Fonts.sidebarItem)
-                    .foregroundStyle(appState.selectedResourceKind == kind ? .primary : .secondary)
+                    .foregroundStyle(isSelected ? .primary : .secondary)
 
                 Spacer()
             }
@@ -145,9 +149,19 @@ struct SidebarView: View {
             .padding(.horizontal, Theme.Dimensions.spacing)
             .background(
                 RoundedRectangle(cornerRadius: Theme.Dimensions.cornerRadius)
-                    .fill(appState.selectedResourceKind == kind ? Theme.Colors.accent.opacity(0.1) : .clear)
+                    .fill(
+                        isSelected
+                            ? Theme.Colors.accent.opacity(0.1)
+                            : isHovered
+                                ? Theme.Colors.hoverBackground
+                                : .clear
+                    )
             )
+            .animation(Theme.Animations.hoverTransition, value: isHovered)
         }
         .buttonStyle(.plain)
+        .onHover { hovering in
+            hoveredKind = hovering ? kind : nil
+        }
     }
 }

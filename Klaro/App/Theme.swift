@@ -25,6 +25,8 @@ enum Theme {
         static let warningBackground = Color.orange.opacity(0.08)
         static let successBackground = Color.green.opacity(0.08)
         static let cardBackground = Color(nsColor: .controlBackgroundColor).opacity(0.4)
+        static let cardBorder = Color(nsColor: .separatorColor).opacity(0.3)
+        static let hoverBackground = Color.primary.opacity(0.04)
 
         // UI
         static let accent = Color.accentColor
@@ -73,6 +75,8 @@ enum Theme {
     enum Animations {
         static let panelTransition = Animation.easeInOut(duration: 0.2)
         static let contentTransition = Animation.easeOut(duration: 0.15)
+        static let hoverTransition = Animation.easeOut(duration: 0.1)
+        static let tabTransition = Animation.easeInOut(duration: 0.15)
     }
 
     // MARK: - Dimensions
@@ -82,7 +86,9 @@ enum Theme {
         static let sidebarWidth: CGFloat = 220
         static let sidebarMinWidth: CGFloat = 180
         static let sidebarMaxWidth: CGFloat = 320
-        static let detailPanelWidth: CGFloat = 380
+        static let detailPanelMinWidth: CGFloat = 300
+        static let detailPanelIdealWidth: CGFloat = 420
+        static let detailPanelMaxWidth: CGFloat = 800
         static let bottomPanelMinHeight: CGFloat = 100
         static let bottomPanelMaxHeight: CGFloat = 600
         static let bottomPanelDefaultHeight: CGFloat = 250
@@ -90,6 +96,8 @@ enum Theme {
         static let iconSize: CGFloat = 16
         static let statusBadgeHeight: CGFloat = 20
         static let cornerRadius: CGFloat = 6
+        static let cardCornerRadius: CGFloat = 8
+        static let sectionSpacing: CGFloat = 16
         static let spacing: CGFloat = 8
         static let smallSpacing: CGFloat = 4
         static let padding: CGFloat = 12

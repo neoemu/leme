@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A4F3E2D1C0B9A8F7E6D5C4B3 /* NetworkPolicyListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3C4D5E6F7A8B9C0D1E2F3A4 /* NetworkPolicyListView.swift */; };
 		041792B5CA80A6DA9189CFC6 /* NamespaceFilterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 244244F43B21EBFC4648FFE4 /* NamespaceFilterView.swift */; };
 		046B8FDBD03C4CC2BA84547A /* ClusterManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB85376BBCFAABB821772ACC /* ClusterManager.swift */; };
 		04B1C0361E299F7E15AFB16C /* DaemonSetListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5B98556AB2E7201A320F54A /* DaemonSetListView.swift */; };
@@ -15,6 +16,8 @@
 		1419638027608FFE9118B2CC /* ServiceAccountListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B739605E129B91103638A40 /* ServiceAccountListView.swift */; };
 		17769640F7DD92A045FC43CC /* PVCListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D7E37F4CDB2983CF8F88605 /* PVCListView.swift */; };
 		23344B37BFA862151ECFDAF2 /* EventListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 005602B260B288C64379A46F /* EventListView.swift */; };
+		F2E1D0C9B8A7F6E5D4C3B2A1 /* ReplicaSetListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1F2 /* ReplicaSetListView.swift */; };
+		DAC9B8A7F6E5D4C3B2A1F0E9 /* RoleBindingListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9F0A1B2C3D4E5F6A7B8C9DA /* RoleBindingListView.swift */; };
 		23BBAB8C8DC66D29B27E516E /* RoleListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE80C5EA9ABDDC5FFFFAB3C6 /* RoleListView.swift */; };
 		25BE2FD3A7FE485C43F52BE1 /* CodeEditor in Frameworks */ = {isa = PBXBuildFile; productRef = 67428439A2850C0C9FF54AB4 /* CodeEditor */; };
 		26F2112B67E38745E46053DF /* ResourceKind.swift in Sources */ = {isa = PBXBuildFile; fileRef = 489D6D801DEABA8BDEA173CA /* ResourceKind.swift */; };
@@ -28,6 +31,8 @@
 		371653F1E59A3492031F4A8E /* SecretListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B99BCC99CCBABDBDBFC73C6 /* SecretListView.swift */; };
 		39843B0CED6B2D974A4B8A47 /* ServiceListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BE56E3029F9BDF65D3D9FDC /* ServiceListView.swift */; };
 		3E55F2C8CFBF2FC4B90FFCFC /* ClusterConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 081C539B73F507BE4FC463A6 /* ClusterConnection.swift */; };
+		C8B7A6F5E4D3C2B1A0F9E8D7 /* ClusterRoleBindingListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7E8F9A0B1C2D3E4F5A6B7C8 /* ClusterRoleBindingListView.swift */; };
+		B6A5F4E3D2C1B0A9F8E7D6C5 /* ClusterRoleListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5D6E7F8A9B0C1D2E3F4A5B6 /* ClusterRoleListView.swift */; };
 		41792B556004D4F17782E7D8 /* AppCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E713A2705FDBFD63A5D09E0 /* AppCommands.swift */; };
 		490978C7B0D582051F2575B4 /* KlaroUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE85CE982D0E2AFAC9101877 /* KlaroUITests.swift */; };
 		49505A38B3D78458F3A407C8 /* Color+Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 265964CFFF97490822C6A21A /* Color+Theme.swift */; };
@@ -139,21 +144,26 @@
 		998AB0A6AAEF283E7C5BB999 /* ResourceDetailPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResourceDetailPanel.swift; sourceTree = "<group>"; };
 		9D90EA29923E963F31614E96 /* EmptyStateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyStateView.swift; sourceTree = "<group>"; };
 		9DB301550D20811A42DE8304 /* TerminalContainerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalContainerView.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6A7B8C9D0E1F2 /* ReplicaSetListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplicaSetListView.swift; sourceTree = "<group>"; };
 		A2D344C77C64DF23906E4314 /* StatefulSetListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatefulSetListView.swift; sourceTree = "<group>"; };
 		A70C4D1336B2B00EFB5434E7 /* KlaroTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KlaroTests.swift; sourceTree = "<group>"; };
 		ABDFF55C6B6C2AF8C0A9DE9A /* KubernetesService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KubernetesService.swift; sourceTree = "<group>"; };
 		AED22A22F588707E6BABCBC7 /* PVListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PVListView.swift; sourceTree = "<group>"; };
+		B3C4D5E6F7A8B9C0D1E2F3A4 /* NetworkPolicyListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkPolicyListView.swift; sourceTree = "<group>"; };
 		B279D795393EEC25B531B69A /* StatusBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBadge.swift; sourceTree = "<group>"; };
 		B6F5D0789ED78B3A27B06129 /* StorageClassListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageClassListView.swift; sourceTree = "<group>"; };
+		C5D6E7F8A9B0C1D2E3F4A5B6 /* ClusterRoleListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClusterRoleListView.swift; sourceTree = "<group>"; };
 		CBB9954C98141BAAEAA37862 /* BottomPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomPanelView.swift; sourceTree = "<group>"; };
 		CE85CE982D0E2AFAC9101877 /* KlaroUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KlaroUITests.swift; sourceTree = "<group>"; };
 		D06D982F1414C38249A2CC1E /* CommandPaletteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandPaletteView.swift; sourceTree = "<group>"; };
 		D228E35DB21CD5108775C47D /* ResourceWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResourceWatcher.swift; sourceTree = "<group>"; };
+		D7E8F9A0B1C2D3E4F5A6B7C8 /* ClusterRoleBindingListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClusterRoleBindingListView.swift; sourceTree = "<group>"; };
 		D4140F1FF55C831B0DB23CC2 /* PodDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PodDetailView.swift; sourceTree = "<group>"; };
 		D58CD3E1D4EE25DA821F941C /* TerminalViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalViewModel.swift; sourceTree = "<group>"; };
 		D5B98556AB2E7201A320F54A /* DaemonSetListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DaemonSetListView.swift; sourceTree = "<group>"; };
 		DA3D810F13E4AD29C3CAE392 /* JobListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobListView.swift; sourceTree = "<group>"; };
 		DE80C5EA9ABDDC5FFFFAB3C6 /* RoleListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoleListView.swift; sourceTree = "<group>"; };
+		E9F0A1B2C3D4E5F6A7B8C9DA /* RoleBindingListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoleBindingListView.swift; sourceTree = "<group>"; };
 		E5EA4B75A1D82ED12D36C4AA /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		EB85376BBCFAABB821772ACC /* ClusterManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClusterManager.swift; sourceTree = "<group>"; };
 		ED6BA8879CE2825DCC38A072 /* DeploymentListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeploymentListView.swift; sourceTree = "<group>"; };
@@ -210,6 +220,9 @@
 		55BECA8993D3760D464316FC /* AccessControl */ = {
 			isa = PBXGroup;
 			children = (
+				D7E8F9A0B1C2D3E4F5A6B7C8 /* ClusterRoleBindingListView.swift */,
+				C5D6E7F8A9B0C1D2E3F4A5B6 /* ClusterRoleListView.swift */,
+				E9F0A1B2C3D4E5F6A7B8C9DA /* RoleBindingListView.swift */,
 				DE80C5EA9ABDDC5FFFFAB3C6 /* RoleListView.swift */,
 				4B739605E129B91103638A40 /* ServiceAccountListView.swift */,
 			);
@@ -226,6 +239,7 @@
 				DA3D810F13E4AD29C3CAE392 /* JobListView.swift */,
 				D4140F1FF55C831B0DB23CC2 /* PodDetailView.swift */,
 				24A5666EA472DD544B711E1C /* PodListView.swift */,
+				A1B2C3D4E5F6A7B8C9D0E1F2 /* ReplicaSetListView.swift */,
 				A2D344C77C64DF23906E4314 /* StatefulSetListView.swift */,
 			);
 			path = Workloads;
@@ -245,6 +259,7 @@
 			children = (
 				25A3056F3D3022D8E5738BDB /* EndpointListView.swift */,
 				36D600C301CE69DE3206C95A /* IngressListView.swift */,
+				B3C4D5E6F7A8B9C0D1E2F3A4 /* NetworkPolicyListView.swift */,
 				2BE56E3029F9BDF65D3D9FDC /* ServiceListView.swift */,
 			);
 			path = Network;
@@ -564,6 +579,8 @@
 				86245BCD90746DA430BDCAE7 /* BottomPanelView.swift in Sources */,
 				3E55F2C8CFBF2FC4B90FFCFC /* ClusterConnection.swift in Sources */,
 				046B8FDBD03C4CC2BA84547A /* ClusterManager.swift in Sources */,
+				C8B7A6F5E4D3C2B1A0F9E8D7 /* ClusterRoleBindingListView.swift in Sources */,
+				B6A5F4E3D2C1B0A9F8E7D6C5 /* ClusterRoleListView.swift in Sources */,
 				B4D69F9C35A65C7BB69CE0D2 /* ClusterOverviewView.swift in Sources */,
 				B9161EBDE6EC6711C953D938 /* ClusterViewModel.swift in Sources */,
 				49505A38B3D78458F3A407C8 /* Color+Theme.swift in Sources */,
@@ -591,6 +608,7 @@
 				830398D393A84D171A945B8F /* LogViewerView.swift in Sources */,
 				F6A21E6B219125BE5FD1AD8E /* MainLayout.swift in Sources */,
 				041792B5CA80A6DA9189CFC6 /* NamespaceFilterView.swift in Sources */,
+				A4F3E2D1C0B9A8F7E6D5C4B3 /* NetworkPolicyListView.swift in Sources */,
 				32344305A175CC2B10541546 /* NodeListView.swift in Sources */,
 				17769640F7DD92A045FC43CC /* PVCListView.swift in Sources */,
 				B55AE8C33FC1CE848C04FFC3 /* PVListView.swift in Sources */,
@@ -604,6 +622,8 @@
 				87BBACC8F6AC24811FC870B7 /* ResourceListViewModel.swift in Sources */,
 				D8C6856B13F02B1487396178 /* ResourceTableView.swift in Sources */,
 				769EA51A3A2D14B7D4D09BCB /* ResourceWatcher.swift in Sources */,
+				F2E1D0C9B8A7F6E5D4C3B2A1 /* ReplicaSetListView.swift in Sources */,
+				DAC9B8A7F6E5D4C3B2A1F0E9 /* RoleBindingListView.swift in Sources */,
 				23BBAB8C8DC66D29B27E516E /* RoleListView.swift in Sources */,
 				371653F1E59A3492031F4A8E /* SecretListView.swift in Sources */,
 				1419638027608FFE9118B2CC /* ServiceAccountListView.swift in Sources */,

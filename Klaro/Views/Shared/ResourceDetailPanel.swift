@@ -1,4 +1,5 @@
 import SwiftUI
+import CodeEditor
 
 enum ResourceDetailTab: String, CaseIterable, Identifiable, Sendable {
     case overview = "Overview"
@@ -77,7 +78,9 @@ struct ResourceDetailPanel: View {
 
     private func tabButton(_ tab: ResourceDetailTab) -> some View {
         Button {
-            selectedTab = tab
+            withAnimation(Theme.Animations.tabTransition) {
+                selectedTab = tab
+            }
         } label: {
             HStack(spacing: Theme.Dimensions.smallSpacing) {
                 Image(systemName: tab.icon)
@@ -102,14 +105,15 @@ struct ResourceDetailPanel: View {
     @ViewBuilder
     private var tabContent: some View {
         if viewModel.isLoading {
-            VStack {
+            VStack(spacing: Theme.Dimensions.spacing * 2) {
                 ProgressView()
-                    .controlSize(.small)
+                    .controlSize(.regular)
                 Text("Loading details...")
-                    .font(Theme.Fonts.caption)
+                    .font(Theme.Fonts.sidebarItem)
                     .foregroundStyle(Theme.Colors.secondaryText)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .transition(.opacity)
         } else if let error = viewModel.errorMessage {
             VStack(spacing: Theme.Dimensions.spacing) {
                 Image(systemName: "exclamationmark.triangle")
@@ -122,14 +126,18 @@ struct ResourceDetailPanel: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            switch selectedTab {
-            case .overview:
-                overviewTab
-            case .yaml:
-                yamlTab
-            case .events:
-                eventsTab
+            Group {
+                switch selectedTab {
+                case .overview:
+                    overviewTab
+                case .yaml:
+                    yamlTab
+                case .events:
+                    eventsTab
+                }
             }
+            .transition(.opacity)
+            .animation(Theme.Animations.tabTransition, value: selectedTab)
         }
     }
 
@@ -137,53 +145,56 @@ struct ResourceDetailPanel: View {
 
     private var overviewTab: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: Theme.Dimensions.spacing * 2) {
-                metadataSection
-                if !viewModel.labels.isEmpty {
-                    labelsSection
+            VStack(alignment: .leading, spacing: Theme.Dimensions.sectionSpacing) {
+                cardSection(title: "Metadata") {
+                    ForEach(Array(viewModel.metadata.sorted(by: { $0.key < $1.key })), id: \.key) { key, value in
+                        detailRow(key: key, value: value)
+                    }
                 }
+
+                if !viewModel.labels.isEmpty {
+                    cardSection(title: "Labels") {
+                        ForEach(Array(viewModel.labels.sorted(by: { $0.key < $1.key })), id: \.key) { key, value in
+                            labelBadge(key: key, value: value)
+                        }
+                    }
+                }
+
                 if !viewModel.annotations.isEmpty {
-                    annotationsSection
+                    cardSection(title: "Annotations") {
+                        ForEach(Array(viewModel.annotations.sorted(by: { $0.key < $1.key })), id: \.key) { key, value in
+                            detailRow(key: key, value: value)
+                        }
+                    }
                 }
             }
             .padding(Theme.Dimensions.padding)
         }
     }
 
-    private var metadataSection: some View {
+    // MARK: - Card Section
+
+    private func cardSection<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: Theme.Dimensions.spacing) {
-            sectionHeader("Metadata")
+            Text(title)
+                .font(Theme.Fonts.sidebarHeader)
+                .foregroundStyle(Theme.Colors.secondaryText)
+                .textCase(.uppercase)
 
-            ForEach(Array(viewModel.metadata.sorted(by: { $0.key < $1.key })), id: \.key) { key, value in
-                detailRow(key: key, value: value)
+            VStack(alignment: .leading, spacing: Theme.Dimensions.spacing) {
+                content()
             }
+            .padding(Theme.Dimensions.padding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.Dimensions.cardCornerRadius)
+                    .fill(Theme.Colors.cardBackground)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Dimensions.cardCornerRadius)
+                    .stroke(Theme.Colors.cardBorder, lineWidth: 0.5)
+            )
         }
-    }
-
-    private var labelsSection: some View {
-        VStack(alignment: .leading, spacing: Theme.Dimensions.spacing) {
-            sectionHeader("Labels")
-
-            ForEach(Array(viewModel.labels.sorted(by: { $0.key < $1.key })), id: \.key) { key, value in
-                detailRow(key: key, value: value)
-            }
-        }
-    }
-
-    private var annotationsSection: some View {
-        VStack(alignment: .leading, spacing: Theme.Dimensions.spacing) {
-            sectionHeader("Annotations")
-
-            ForEach(Array(viewModel.annotations.sorted(by: { $0.key < $1.key })), id: \.key) { key, value in
-                detailRow(key: key, value: value)
-            }
-        }
-    }
-
-    private func sectionHeader(_ title: String) -> some View {
-        Text(title)
-            .font(Theme.Fonts.subtitle)
-            .foregroundStyle(.primary)
     }
 
     private func detailRow(key: String, value: String) -> some View {
@@ -193,21 +204,48 @@ struct ResourceDetailPanel: View {
                 .foregroundStyle(Theme.Colors.tertiaryText)
             Text(value.isEmpty ? "-" : value)
                 .font(Theme.Fonts.monoSmall)
-                .foregroundStyle(Theme.Colors.secondaryText)
+                .foregroundStyle(.primary)
                 .textSelection(.enabled)
         }
     }
 
+    private func labelBadge(key: String, value: String) -> some View {
+        HStack(spacing: 0) {
+            Text(key)
+                .font(Theme.Fonts.monoSmall)
+                .foregroundStyle(Theme.Colors.accent)
+            Text("=")
+                .font(Theme.Fonts.monoSmall)
+                .foregroundStyle(Theme.Colors.tertiaryText)
+            Text(value)
+                .font(Theme.Fonts.monoSmall)
+                .foregroundStyle(.primary)
+        }
+        .textSelection(.enabled)
+    }
+
     // MARK: - YAML Tab
 
+    @ViewBuilder
     private var yamlTab: some View {
-        ScrollView([.horizontal, .vertical]) {
-            Text(viewModel.resourceYAML.isEmpty ? "No YAML available" : viewModel.resourceYAML)
-                .font(Theme.Fonts.monoSmall)
-                .foregroundStyle(Theme.Colors.secondaryText)
-                .textSelection(.enabled)
-                .padding(Theme.Dimensions.padding)
-                .frame(maxWidth: .infinity, alignment: .leading)
+        if viewModel.resourceYAML.isEmpty {
+            VStack(spacing: Theme.Dimensions.spacing) {
+                Image(systemName: "doc.plaintext")
+                    .font(.system(size: 24))
+                    .foregroundStyle(Theme.Colors.tertiaryText)
+                Text("No YAML available")
+                    .font(Theme.Fonts.caption)
+                    .foregroundStyle(Theme.Colors.secondaryText)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            CodeEditor(
+                source: .constant(viewModel.resourceYAML),
+                language: .yaml,
+                theme: .ocean,
+                flags: [.selectable],
+                indentStyle: .softTab(width: 2)
+            )
         }
     }
 
@@ -227,13 +265,14 @@ struct ResourceDetailPanel: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: Theme.Dimensions.spacing) {
+                    LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(viewModel.events) { event in
                             eventRow(event)
+                                .padding(.horizontal, Theme.Dimensions.padding)
+                                .padding(.vertical, Theme.Dimensions.spacing)
                             Divider()
                         }
                     }
-                    .padding(Theme.Dimensions.padding)
                 }
             }
         }

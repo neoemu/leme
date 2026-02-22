@@ -28,7 +28,12 @@ final class ResourceDetailViewModel {
         do {
             let pod = try await kubernetesService.get(core.v1.Pod.self, name: name, in: namespace)
             extractMetadata(from: pod)
-            resourceYAML = try await kubernetesService.getYAML(pod)
+            // YAML is best-effort — don't block overview on serialization failure
+            do {
+                resourceYAML = try await kubernetesService.getYAML(pod)
+            } catch {
+                resourceYAML = "# Error loading YAML: \(error.localizedDescription)"
+            }
             await loadEvents(forResource: name, namespace: namespace)
         } catch {
             errorMessage = error.localizedDescription
@@ -44,7 +49,11 @@ final class ResourceDetailViewModel {
         do {
             let deployment = try await kubernetesService.get(apps.v1.Deployment.self, name: name, in: namespace)
             extractMetadata(from: deployment)
-            resourceYAML = try await kubernetesService.getYAML(deployment)
+            do {
+                resourceYAML = try await kubernetesService.getYAML(deployment)
+            } catch {
+                resourceYAML = "# Error loading YAML: \(error.localizedDescription)"
+            }
             await loadEvents(forResource: name, namespace: namespace)
         } catch {
             errorMessage = error.localizedDescription
@@ -64,7 +73,11 @@ final class ResourceDetailViewModel {
         do {
             let resource = try await kubernetesService.get(type, name: name, in: namespace)
             extractMetadata(from: resource)
-            resourceYAML = try await kubernetesService.getYAML(resource)
+            do {
+                resourceYAML = try await kubernetesService.getYAML(resource)
+            } catch {
+                resourceYAML = "# Error loading YAML: \(error.localizedDescription)"
+            }
             await loadEvents(forResource: name, namespace: namespace)
         } catch {
             errorMessage = error.localizedDescription
@@ -81,7 +94,11 @@ final class ResourceDetailViewModel {
         do {
             let resource = try await kubernetesService.getClusterScoped(type, name: name)
             extractMetadata(from: resource)
-            resourceYAML = try await kubernetesService.getYAML(resource)
+            do {
+                resourceYAML = try await kubernetesService.getYAML(resource)
+            } catch {
+                resourceYAML = "# Error loading YAML: \(error.localizedDescription)"
+            }
         } catch {
             errorMessage = error.localizedDescription
         }

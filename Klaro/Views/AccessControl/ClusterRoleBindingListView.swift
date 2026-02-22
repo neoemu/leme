@@ -1,0 +1,101 @@
+import SwiftUI
+import SwiftkubeClient
+import SwiftkubeModel
+
+struct ClusterRoleBindingListView: View {
+    @Environment(AppState.self) private var appState
+    @Environment(ClusterViewModel.self) private var clusterViewModel
+    @State private var viewModel = ResourceListViewModel()
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if viewModel.isLoading && viewModel.resources.isEmpty {
+                ProgressView("Loading cluster role bindings...")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let errorMessage = viewModel.errorMessage {
+                EmptyStateView(
+                    icon: "exclamationmark.triangle",
+                    title: "Error Loading Cluster Role Bindings",
+                    message: errorMessage
+                )
+            } else if viewModel.filteredResources.isEmpty {
+                EmptyStateView(
+                    icon: ResourceKind.clusterRoleBinding.icon,
+                    title: "No Cluster Role Bindings",
+                    message: "No cluster role bindings found."
+                )
+            } else {
+                clusterRoleBindingTable
+            }
+        }
+        .task { await loadData() }
+    }
+
+    private var clusterRoleBindingTable: some View {
+        Table(viewModel.filteredResources, selection: $viewModel.selectedResourceID) {
+            TableColumn("Name") { item in
+                Text(item.name)
+                    .font(Theme.Fonts.monoSmall)
+            }
+            .width(min: 150, ideal: 250)
+
+            TableColumn("Role Ref") { item in
+                Text(item.extraColumns["roleRef"] ?? "-")
+                    .font(Theme.Fonts.monoSmall)
+                    .foregroundStyle(Theme.Colors.secondaryText)
+            }
+            .width(min: 100, ideal: 180)
+
+            TableColumn("Subjects") { item in
+                Text(item.extraColumns["subjects"] ?? "0")
+                    .font(Theme.Fonts.monoSmall)
+            }
+            .width(min: 50, ideal: 70)
+
+            TableColumn("Age") { item in
+                if let age = item.age {
+                    AgeLabel(date: age)
+                } else {
+                    Text("-")
+                        .font(Theme.Fonts.monoSmall)
+                        .foregroundStyle(Theme.Colors.tertiaryText)
+                }
+            }
+            .width(min: 40, ideal: 60)
+        }
+        .tableStyle(.inset(alternatesRowBackgrounds: true))
+        .onChange(of: viewModel.selectedResourceID) { _, newValue in
+            appState.selectResource(newValue)
+        }
+    }
+
+    private func loadData() async {
+        guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+        await viewModel.loadClusterScopedResources(
+            rbac.v1.ClusterRoleBinding.self,
+            kind: .clusterRoleBinding,
+            client: client,
+            mapper: clusterRoleBindingToResourceItem
+        )
+    }
+
+    private nonisolated func clusterRoleBindingToResourceItem(_ crb: rbac.v1.ClusterRoleBinding) -> ResourceItem {
+        let roleRef = "\(crb.roleRef.kind)/\(crb.roleRef.name)"
+        let subjectsCount = crb.subjects?.count ?? 0
+
+        return ResourceItem(
+            id: crb.name ?? "",
+            name: crb.name ?? "",
+            namespace: nil,
+            status: "Active",
+            age: crb.metadata?.creationTimestamp,
+            labels: crb.metadata?.labels ?? [:],
+            annotations: crb.metadata?.annotations ?? [:],
+            kind: .clusterRoleBinding,
+            extraColumns: [
+                "roleRef": roleRef,
+                "subjects": "\(subjectsCount)",
+            ]
+        )
+    }
+}

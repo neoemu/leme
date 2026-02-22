@@ -176,8 +176,40 @@ actor KubernetesService {
             throw KubernetesServiceError.yamlSerializationFailed("Could not convert resource to dictionary")
         }
 
-        let yamlString = try Yams.dump(object: jsonObject, allowUnicode: true, sortKeys: true)
+        // Sanitize Foundation types (NSNumber, NSString) to Swift native types
+        // that Yams can represent via NodeRepresentable
+        let sanitized = sanitizeForYams(jsonObject)
+        let yamlString = try Yams.dump(object: sanitized, allowUnicode: true, sortKeys: true)
         return yamlString
+    }
+
+    /// Recursively converts Foundation types (NSNumber, NSString, etc.) produced by
+    /// JSONSerialization into Swift native types that conform to Yams' NodeRepresentable.
+    private func sanitizeForYams(_ value: Any) -> Any {
+        switch value {
+        case let dict as [String: Any]:
+            return dict.mapValues { sanitizeForYams($0) }
+        case let array as [Any]:
+            return array.map { sanitizeForYams($0) }
+        case let number as NSNumber:
+            // Detect NSNumber wrapping a Bool (CFBoolean) — must check before Int/Double
+            if CFGetTypeID(number) == CFBooleanGetTypeID() {
+                return number.boolValue
+            }
+            // Prefer Int when the value is integral
+            let doubleVal = number.doubleValue
+            let intVal = number.intValue
+            if doubleVal == Double(intVal) && !number.stringValue.contains(".") {
+                return intVal
+            }
+            return doubleVal
+        case let string as NSString:
+            return string as String
+        case is NSNull:
+            return NSNull()
+        default:
+            return "\(value)"
+        }
     }
 
     /// Parses a YAML string and applies it as a Kubernetes resource.
