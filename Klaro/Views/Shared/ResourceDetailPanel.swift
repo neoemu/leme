@@ -65,8 +65,11 @@ struct ResourceDetailPanel: View {
                 Image(systemName: "xmark")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Close details panel")
         }
         .padding(Theme.Dimensions.padding)
     }
@@ -95,8 +98,10 @@ struct ResourceDetailPanel: View {
                 Text(tab.rawValue)
                     .font(Theme.Fonts.sidebarItem)
             }
-            .padding(.horizontal, Theme.Dimensions.spacing)
-            .padding(.vertical, 4)
+            .padding(.horizontal, Theme.Dimensions.padding)
+            .padding(.vertical, 8)
+            .frame(minHeight: 32, alignment: .center)
+            .contentShape(Rectangle())
             .background(
                 RoundedRectangle(cornerRadius: Theme.Dimensions.cornerRadius)
                     .fill(selectedTab == tab ? Theme.Colors.accent.opacity(0.15) : .clear)
@@ -104,7 +109,7 @@ struct ResourceDetailPanel: View {
             .foregroundStyle(selectedTab == tab ? Theme.Colors.accent : .secondary)
         }
         .buttonStyle(.plain)
-        .padding(.leading, Theme.Dimensions.spacing)
+        .padding(.leading, Theme.Dimensions.smallSpacing)
     }
 
     // MARK: - Tab Content
