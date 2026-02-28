@@ -84,6 +84,29 @@ enum SortOrder: Sendable {
     case descending
 }
 
+enum ResourceOperationState: Sendable, Equatable {
+    case idle
+    case running(String)
+    case success(String)
+    case error(String)
+
+    var message: String? {
+        switch self {
+        case .idle:
+            return nil
+        case .running(let message), .success(let message), .error(let message):
+            return message
+        }
+    }
+}
+
+enum LiveWatchStatus: Sendable, Equatable {
+    case off
+    case syncing
+    case live(lastEventAt: Date?)
+    case recovering(lastEventAt: Date?, reason: String?)
+}
+
 @Observable
 @MainActor
 final class ResourceListViewModel {
@@ -106,14 +129,20 @@ final class ResourceListViewModel {
     var showRestartError = false
     var scaleError: String?
     var showScaleError = false
+    var operationState: ResourceOperationState = .idle
+    var liveWatchStatus: LiveWatchStatus = .off
 
     private static let liveReloadDebounceNanoseconds: UInt64 = 250_000_000
     private static let livePollingIntervalNanoseconds: UInt64 = 1_500_000_000
+    private static let watchHealthPollIntervalNanoseconds: UInt64 = 1_000_000_000
+    private static let watchStaleThreshold: TimeInterval = 12
 
     private var watcher: ResourceWatcher?
     private var watchTask: Task<Void, Never>?
     private var watchDebounceTask: Task<Void, Never>?
     private var watchPollingTask: Task<Void, Never>?
+    private var watchHealthTask: Task<Void, Never>?
+    private var operationResetTask: Task<Void, Never>?
     private var liveWatchContext: LiveWatchContext?
     private var watchReloadAction: (@MainActor () async -> Void)?
     private var isPerformingLiveReload = false
@@ -143,6 +172,28 @@ final class ResourceListViewModel {
             return sortOrder == .ascending ? cmp : !cmp
         }
         return result
+    }
+
+    var hasLiveWatch: Bool {
+        if case .off = liveWatchStatus { return false }
+        return true
+    }
+
+    var liveWatchStatusText: String {
+        switch liveWatchStatus {
+        case .off:
+            return "Live sync off"
+        case .syncing:
+            return "Syncing"
+        case .live(let lastEventAt):
+            if let lastEventAt {
+                let age = Int(max(0, Date().timeIntervalSince(lastEventAt)))
+                return "Live (\(age)s)"
+            }
+            return "Live"
+        case .recovering(_, _):
+            return "Recovering"
+        }
     }
 
     func toggleSort(field: SortField) {
@@ -329,6 +380,7 @@ final class ResourceListViewModel {
 
         liveWatchContext = context
         watchReloadAction = onReload
+        liveWatchStatus = .syncing
         let watcher = ResourceWatcher(client: client)
         self.watcher = watcher
 
@@ -341,6 +393,7 @@ final class ResourceListViewModel {
         }
 
         startLivePolling()
+        startWatchHealthPolling(for: kind)
     }
 
     func stopWatch() {
@@ -350,6 +403,8 @@ final class ResourceListViewModel {
         watchDebounceTask = nil
         watchPollingTask?.cancel()
         watchPollingTask = nil
+        watchHealthTask?.cancel()
+        watchHealthTask = nil
 
         if let watcher {
             Task {
@@ -360,13 +415,16 @@ final class ResourceListViewModel {
         liveWatchContext = nil
         watchReloadAction = nil
         isPerformingLiveReload = false
+        liveWatchStatus = .off
     }
 
     private func handleWatchEvent(_ event: ResourceWatchEvent) async {
         if event.type == .error {
+            liveWatchStatus = .recovering(lastEventAt: nil, reason: event.resourceName)
             return
         }
 
+        liveWatchStatus = .live(lastEventAt: Date())
         applyImmediateWatchMutation(event)
         scheduleLiveReload()
     }
@@ -393,6 +451,47 @@ final class ResourceListViewModel {
         }
     }
 
+    private func startWatchHealthPolling(for kind: ResourceKind) {
+        watchHealthTask?.cancel()
+        watchHealthTask = Task { [weak self] in
+            guard let self else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: Self.watchHealthPollIntervalNanoseconds)
+                guard !Task.isCancelled else { break }
+                await self.refreshWatchHealth(kind: kind)
+            }
+        }
+    }
+
+    private func refreshWatchHealth(kind: ResourceKind) async {
+        guard let watcher else {
+            liveWatchStatus = .off
+            return
+        }
+
+        guard let health = await watcher.watchHealth(kind: kind) else {
+            liveWatchStatus = .syncing
+            return
+        }
+
+        if health.isRecovering {
+            liveWatchStatus = .recovering(lastEventAt: health.lastEventAt, reason: health.lastError)
+            return
+        }
+
+        if let lastEventAt = health.lastEventAt {
+            let isStale = Date().timeIntervalSince(lastEventAt) > Self.watchStaleThreshold
+            if isStale {
+                liveWatchStatus = .recovering(lastEventAt: lastEventAt, reason: "No recent watch events.")
+            } else {
+                liveWatchStatus = .live(lastEventAt: lastEventAt)
+            }
+            return
+        }
+
+        liveWatchStatus = .syncing
+    }
+
     private func performLiveReloadIfNeeded() async {
         guard !isPerformingLiveReload, let watchReloadAction else { return }
         isPerformingLiveReload = true
@@ -415,6 +514,7 @@ final class ResourceListViewModel {
     // MARK: - Delete
 
     func deleteResource(kind: ResourceKind, name: String, namespace: String?, client: KubernetesClient) async {
+        setOperationRunning("Deleting \(kind.rawValue) \(name)…")
         let service = KubernetesService(client: client)
         do {
             switch kind {
@@ -438,6 +538,8 @@ final class ResourceListViewModel {
                 try await service.delete(networking.v1.Ingress.self, name: name, in: namespace)
             case .endpoint:
                 try await service.delete(core.v1.Endpoints.self, name: name, in: namespace)
+            case .horizontalPodAutoscaler:
+                try await service.delete(autoscaling.v2.HorizontalPodAutoscaler.self, name: name, in: namespace)
             case .networkPolicy:
                 try await service.delete(networking.v1.NetworkPolicy.self, name: name, in: namespace)
             case .configMap:
@@ -446,6 +548,12 @@ final class ResourceListViewModel {
                 try await service.delete(core.v1.Secret.self, name: name, in: namespace)
             case .persistentVolumeClaim:
                 try await service.delete(core.v1.PersistentVolumeClaim.self, name: name, in: namespace)
+            case .limitRange:
+                try await service.delete(core.v1.LimitRange.self, name: name, in: namespace)
+            case .resourceQuota:
+                try await service.delete(core.v1.ResourceQuota.self, name: name, in: namespace)
+            case .podDisruptionBudget:
+                try await service.delete(policy.v1.PodDisruptionBudget.self, name: name, in: namespace)
             case .serviceAccount:
                 try await service.delete(core.v1.ServiceAccount.self, name: name, in: namespace)
             case .role:
@@ -469,15 +577,18 @@ final class ResourceListViewModel {
             }
             let resourceID = namespace.map { "\($0)/\(name)" } ?? name
             resources.removeAll { $0.id == resourceID }
+            setOperationSuccess("Deleted \(kind.rawValue) \(name)")
         } catch {
             deleteError = error.localizedDescription
             showDeleteError = true
+            setOperationError("Delete failed: \(error.localizedDescription)")
         }
     }
 
     // MARK: - Scale
 
     func scaleResource(kind: ResourceKind, name: String, namespace: String?, replicas: Int, client: KubernetesClient) async {
+        setOperationRunning("Scaling \(kind.rawValue) \(name) to \(replicas)…")
         let service = KubernetesService(client: client)
         do {
             switch kind {
@@ -490,15 +601,18 @@ final class ResourceListViewModel {
             default:
                 break
             }
+            setOperationSuccess("Scaled \(kind.rawValue) \(name) to \(replicas)")
         } catch {
             scaleError = error.localizedDescription
             showScaleError = true
+            setOperationError("Scale failed: \(error.localizedDescription)")
         }
     }
 
     // MARK: - Restart
 
     func restartResource(kind: ResourceKind, name: String, namespace: String?, client: KubernetesClient) async {
+        setOperationRunning("Restarting \(kind.rawValue) \(name)…")
         let service = KubernetesService(client: client)
         do {
             switch kind {
@@ -511,9 +625,11 @@ final class ResourceListViewModel {
             default:
                 break
             }
+            setOperationSuccess("Restart requested for \(kind.rawValue) \(name)")
         } catch {
             restartError = error.localizedDescription
             showRestartError = true
+            setOperationError("Restart failed: \(error.localizedDescription)")
         }
     }
 
@@ -565,8 +681,20 @@ final class ResourceListViewModel {
         case .endpoint:
             let r = try await service.get(core.v1.Endpoints.self, name: name, in: namespace)
             return try await service.getYAML(r)
+        case .horizontalPodAutoscaler:
+            let r = try await service.get(autoscaling.v2.HorizontalPodAutoscaler.self, name: name, in: namespace)
+            return try await service.getYAML(r)
         case .networkPolicy:
             let r = try await service.get(networking.v1.NetworkPolicy.self, name: name, in: namespace)
+            return try await service.getYAML(r)
+        case .limitRange:
+            let r = try await service.get(core.v1.LimitRange.self, name: name, in: namespace)
+            return try await service.getYAML(r)
+        case .resourceQuota:
+            let r = try await service.get(core.v1.ResourceQuota.self, name: name, in: namespace)
+            return try await service.getYAML(r)
+        case .podDisruptionBudget:
+            let r = try await service.get(policy.v1.PodDisruptionBudget.self, name: name, in: namespace)
             return try await service.getYAML(r)
         case .role:
             let r = try await service.get(rbac.v1.Role.self, name: name, in: namespace)
@@ -599,29 +727,73 @@ final class ResourceListViewModel {
     }
 
     func downloadResourceYAML(kind: ResourceKind, name: String, namespace: String?, client: KubernetesClient) async {
+        setOperationRunning("Preparing YAML for \(kind.rawValue) \(name)…")
         do {
             let yaml = try await fetchResourceYAML(kind: kind, name: name, namespace: namespace, client: client)
-            presentSavePanel(yaml: yaml, fileName: "\(name).yaml")
+            let didSave = presentSavePanel(yaml: yaml, fileName: "\(name).yaml")
+            if didSave {
+                setOperationSuccess("Downloaded YAML for \(kind.rawValue) \(name)")
+            } else {
+                clearOperationState()
+            }
         } catch {
             deleteError = "Failed to download YAML: \(error.localizedDescription)"
             showDeleteError = true
+            setOperationError("YAML download failed: \(error.localizedDescription)")
         }
     }
 
-    private func presentSavePanel(yaml: String, fileName: String) {
+    private func presentSavePanel(yaml: String, fileName: String) -> Bool {
         let panel = NSSavePanel()
         panel.nameFieldStringValue = fileName
         panel.allowedContentTypes = [UTType.yaml]
         panel.canCreateDirectories = true
 
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard panel.runModal() == .OK, let url = panel.url else { return false }
 
         do {
             try yaml.write(to: url, atomically: true, encoding: .utf8)
+            return true
         } catch {
             deleteError = "Failed to save file: \(error.localizedDescription)"
             showDeleteError = true
+            return false
         }
+    }
+
+    // MARK: - Operation State
+
+    func clearOperationState() {
+        operationResetTask?.cancel()
+        operationResetTask = nil
+        operationState = .idle
+    }
+
+    private func setOperationRunning(_ message: String) {
+        operationResetTask?.cancel()
+        operationResetTask = nil
+        operationState = .running(message)
+    }
+
+    private func setOperationSuccess(_ message: String) {
+        operationResetTask?.cancel()
+        operationState = .success(message)
+
+        operationResetTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard let self else { return }
+                if case .success = self.operationState {
+                    self.operationState = .idle
+                }
+            }
+        }
+    }
+
+    private func setOperationError(_ message: String) {
+        operationResetTask?.cancel()
+        operationState = .error(message)
     }
 
     // MARK: - Resource Mappers

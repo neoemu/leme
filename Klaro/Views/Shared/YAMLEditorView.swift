@@ -6,7 +6,7 @@ struct YAMLEditorView: View {
     @Binding var source: String
     var title: String = "YAML Editor"
     var onClose: (() -> Void)?
-    var onApply: ((String) async throws -> Void)?
+    var onApply: ((String) async throws -> String)?
 
     @State private var searchText: String = ""
     @State private var searchMatches: [Range<Int>] = []
@@ -185,14 +185,14 @@ struct YAMLEditorView: View {
         selectedOffsets = searchMatches[currentMatchIndex]
     }
 
-    private func runApply(_ onApply: @escaping (String) async throws -> Void) async {
+    private func runApply(_ onApply: @escaping (String) async throws -> String) async {
         isApplying = true
         defer { isApplying = false }
 
         do {
-            try await onApply(source)
+            let status = try await onApply(source)
             applyStatusIsError = false
-            applyStatusMessage = "Applied to cluster"
+            applyStatusMessage = status
         } catch {
             applyStatusIsError = true
             applyStatusMessage = error.localizedDescription

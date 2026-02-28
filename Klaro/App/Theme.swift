@@ -7,6 +7,12 @@ enum Theme {
         // Backgrounds
         static let contentBackground = Color(nsColor: .textBackgroundColor)
         static let bottomPanelBackground = Color(nsColor: .controlBackgroundColor)
+        static let sidebarBackground = Color(red: 0.03, green: 0.05, blue: 0.10)
+        static let sidebarSectionBackground = Color(red: 0.04, green: 0.07, blue: 0.13)
+        static let sidebarExpandedHeaderBackground = Color(red: 0.08, green: 0.18, blue: 0.27)
+        static let sidebarSelectionBackground = Color(red: 0.11, green: 0.25, blue: 0.37)
+        static let sidebarText = Color.white
+        static let sidebarMutedText = Color.white.opacity(0.70)
 
         // Status
         static let running = Color.green

@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 import SwiftkubeClient
 import SwiftkubeModel
@@ -107,10 +108,15 @@ struct UnifiedWorkloadsView: View {
     // MARK: - Data Loading
 
     private func loadAllWorkloads(showLoading: Bool = true) async {
-        if !showLoading {
+        let isLiveReloadRequest = !showLoading
+        if isLiveReloadRequest {
             guard !isLiveReloading else { return }
             isLiveReloading = true
-            defer { isLiveReloading = false }
+        }
+        defer {
+            if isLiveReloadRequest {
+                isLiveReloading = false
+            }
         }
 
         guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else {
@@ -351,6 +357,9 @@ struct UnifiedWorkloadsView: View {
         let namespace = appState.filteredNamespace
         let watcher = ResourceWatcher(client: client)
         workloadWatcher = watcher
+        await MainActor.run {
+            viewModel.liveWatchStatus = .syncing
+        }
 
         let watchedKinds: [ResourceKind] = [
             .pod,
@@ -367,8 +376,12 @@ struct UnifiedWorkloadsView: View {
                 let stream = await watcher.watch(kind: kind, in: namespace)
                 for await event in stream {
                     guard !Task.isCancelled else { break }
-                    guard event.type != .error else { continue }
                     await MainActor.run {
+                        if event.type == .error {
+                            viewModel.liveWatchStatus = .recovering(lastEventAt: nil, reason: event.resourceName)
+                            return
+                        }
+                        viewModel.liveWatchStatus = .live(lastEventAt: Date())
                         scheduleLiveReload()
                     }
                 }
@@ -409,5 +422,6 @@ struct UnifiedWorkloadsView: View {
             }
         }
         workloadWatcher = nil
+        viewModel.liveWatchStatus = .off
     }
 }

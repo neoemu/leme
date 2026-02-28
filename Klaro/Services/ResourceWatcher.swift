@@ -28,6 +28,18 @@ struct ResourceWatchEvent: Sendable {
     }
 }
 
+struct ResourceWatchHealth: Sendable, Equatable {
+    var lastEventAt: Date?
+    var lastError: String?
+    var isRecovering: Bool
+
+    static let initial = ResourceWatchHealth(
+        lastEventAt: nil,
+        lastError: nil,
+        isRecovering: true
+    )
+}
+
 // MARK: - ResourceWatcher
 
 /// Actor that manages watch tasks per resource kind.
@@ -40,6 +52,7 @@ actor ResourceWatcher {
 
     private var watchTasks: [ResourceKind: Task<Void, Never>] = [:]
     private var continuations: [ResourceKind: AsyncStream<ResourceWatchEvent>.Continuation] = [:]
+    private var healthByKind: [ResourceKind: ResourceWatchHealth] = [:]
     private let client: KubernetesClient
 
     // MARK: - Initialization
@@ -59,6 +72,7 @@ actor ResourceWatcher {
     ) -> AsyncStream<ResourceWatchEvent> {
         // Cancel any existing watch for this kind
         stopWatching(kind: kind)
+        healthByKind[kind] = .initial
 
         let (stream, continuation) = AsyncStream<ResourceWatchEvent>.makeStream(
             bufferingPolicy: .bufferingNewest(1000)
@@ -90,6 +104,7 @@ actor ResourceWatcher {
         watchTasks.removeValue(forKey: kind)
         continuations[kind]?.finish()
         continuations.removeValue(forKey: kind)
+        healthByKind.removeValue(forKey: kind)
     }
 
     /// Stops all active watches.
@@ -102,6 +117,10 @@ actor ResourceWatcher {
     /// Returns whether a watch is active for the given resource kind.
     func isWatching(kind: ResourceKind) -> Bool {
         watchTasks[kind] != nil
+    }
+
+    func watchHealth(kind: ResourceKind) -> ResourceWatchHealth? {
+        healthByKind[kind]
     }
 
     // MARK: - Private Watch Implementation
@@ -133,6 +152,8 @@ actor ResourceWatcher {
                 try await watchNamespaced(networking.v1.Ingress.self, kind: kind, namespace: namespace, retryStrategy: retryStrategy)
             case .endpoint:
                 try await watchNamespaced(core.v1.Endpoints.self, kind: kind, namespace: namespace, retryStrategy: retryStrategy)
+            case .horizontalPodAutoscaler:
+                try await watchNamespaced(autoscaling.v2.HorizontalPodAutoscaler.self, kind: kind, namespace: namespace, retryStrategy: retryStrategy)
             case .networkPolicy:
                 try await watchNamespaced(networking.v1.NetworkPolicy.self, kind: kind, namespace: namespace, retryStrategy: retryStrategy)
             case .configMap:
@@ -141,6 +162,12 @@ actor ResourceWatcher {
                 try await watchNamespaced(core.v1.Secret.self, kind: kind, namespace: namespace, retryStrategy: retryStrategy)
             case .persistentVolumeClaim:
                 try await watchNamespaced(core.v1.PersistentVolumeClaim.self, kind: kind, namespace: namespace, retryStrategy: retryStrategy)
+            case .limitRange:
+                try await watchNamespaced(core.v1.LimitRange.self, kind: kind, namespace: namespace, retryStrategy: retryStrategy)
+            case .resourceQuota:
+                try await watchNamespaced(core.v1.ResourceQuota.self, kind: kind, namespace: namespace, retryStrategy: retryStrategy)
+            case .podDisruptionBudget:
+                try await watchNamespaced(policy.v1.PodDisruptionBudget.self, kind: kind, namespace: namespace, retryStrategy: retryStrategy)
             case .serviceAccount:
                 try await watchNamespaced(core.v1.ServiceAccount.self, kind: kind, namespace: namespace, retryStrategy: retryStrategy)
             case .event:
@@ -165,6 +192,7 @@ actor ResourceWatcher {
         } catch {
             // If watching fails entirely, emit an error event and clean up
             if !Task.isCancelled {
+                updateHealthForError(kind: kind, message: error.localizedDescription)
                 let errorEvent = ResourceWatchEvent(
                     type: .error,
                     resourceName: error.localizedDescription,
@@ -192,8 +220,15 @@ actor ResourceWatcher {
         for try await event in stream {
             guard !Task.isCancelled else { break }
 
+            let mappedType = mapEventType(event.type)
+            if mappedType == .error {
+                updateHealthForError(kind: kind, message: "Watch stream returned an API error event.")
+            } else {
+                updateHealthForSuccess(kind: kind)
+            }
+
             let watchEvent = ResourceWatchEvent(
-                type: mapEventType(event.type),
+                type: mappedType,
                 resourceName: event.resource.name ?? "unknown",
                 resourceNamespace: event.resource.metadata?.namespace,
                 resourceVersion: event.resource.metadata?.resourceVersion,
@@ -216,8 +251,15 @@ actor ResourceWatcher {
         for try await event in stream {
             guard !Task.isCancelled else { break }
 
+            let mappedType = mapEventType(event.type)
+            if mappedType == .error {
+                updateHealthForError(kind: kind, message: "Watch stream returned an API error event.")
+            } else {
+                updateHealthForSuccess(kind: kind)
+            }
+
             let watchEvent = ResourceWatchEvent(
-                type: mapEventType(event.type),
+                type: mappedType,
                 resourceName: event.resource.name ?? "unknown",
                 resourceNamespace: nil,
                 resourceVersion: event.resource.metadata?.resourceVersion,
@@ -235,5 +277,19 @@ actor ResourceWatcher {
         case .deleted: return .deleted
         case .error: return .error
         }
+    }
+
+    private func updateHealthForSuccess(kind: ResourceKind) {
+        var health = healthByKind[kind] ?? .initial
+        health.lastEventAt = Date()
+        health.isRecovering = false
+        healthByKind[kind] = health
+    }
+
+    private func updateHealthForError(kind: ResourceKind, message: String) {
+        var health = healthByKind[kind] ?? .initial
+        health.lastError = message
+        health.isRecovering = true
+        healthByKind[kind] = health
     }
 }

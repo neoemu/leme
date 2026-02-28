@@ -72,7 +72,7 @@ struct MainLayout: View {
             .animation(.easeInOut(duration: 0.15), value: appState.isDetailPanelOpen)
             .animation(.easeInOut(duration: 0.15), value: appState.isYAMLEditorOpen)
         }
-        .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 320)
+        .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 360)
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 Button {
@@ -147,13 +147,17 @@ private struct ResizableYAMLEditorView: View {
                     }
 
                     let service = KubernetesService(client: client)
-                    try await service.applyYAML(
+                    let result = try await service.applyYAML(
                         yaml,
                         originalYAML: appState.yamlOriginalSource,
                         in: appState.selectedNamespace,
                         context: appState.activeCluster?.contextName
                     )
                     appState.yamlOriginalSource = yaml
+                    if result.warnings.isEmpty {
+                        return "Applied via \(result.mode.rawValue)"
+                    }
+                    return "Applied via \(result.mode.rawValue) with \(result.warnings.count) warning(s)"
                 }
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

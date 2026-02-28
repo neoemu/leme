@@ -76,6 +76,11 @@ struct ResourceTableView: View {
     var body: some View {
         VStack(spacing: 0) {
             searchBar
+            if case .idle = viewModel.operationState {
+                EmptyView()
+            } else {
+                operationBanner
+            }
             Divider()
             tableContent
         }
@@ -103,7 +108,7 @@ struct ResourceTableView: View {
                 resourceToDelete = nil
             }
         } message: {
-            Text("This action cannot be undone.")
+            Text(deleteConfirmationMessage)
         }
         .confirmationDialog(
             "Restart \(resourceToRestart?.name ?? "")?",
@@ -197,12 +202,115 @@ struct ResourceTableView: View {
 
             Spacer()
 
+            if viewModel.hasLiveWatch {
+                liveWatchStatusView
+            }
+
             Text("\(viewModel.filteredResources.count) items")
                 .font(Theme.Fonts.caption)
                 .foregroundStyle(Theme.Colors.tertiaryText)
         }
         .padding(.horizontal, Theme.Dimensions.padding)
         .padding(.vertical, Theme.Dimensions.spacing)
+    }
+
+    private var deleteConfirmationMessage: String {
+        guard let resource = resourceToDelete else {
+            return "This action cannot be undone."
+        }
+
+        let namespace = resource.namespace ?? "cluster-scoped"
+        return "Resource: \(resource.kind.rawValue)\nNamespace: \(namespace)\nName: \(resource.name)\n\nThis action cannot be undone."
+    }
+
+    @ViewBuilder
+    private var operationBanner: some View {
+        switch viewModel.operationState {
+        case .idle:
+            EmptyView()
+        case .running(let message):
+            bannerRow(
+                icon: AnyView(ProgressView().controlSize(.small)),
+                message: message,
+                textColor: Theme.Colors.secondaryText,
+                background: Theme.Colors.cardBackground
+            )
+        case .success(let message):
+            bannerRow(
+                icon: AnyView(Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.Colors.running)),
+                message: message,
+                textColor: Theme.Colors.secondaryText,
+                background: Theme.Colors.successBackground
+            )
+        case .error(let message):
+            bannerRow(
+                icon: AnyView(Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.Colors.failed)),
+                message: message,
+                textColor: Theme.Colors.failed,
+                background: Theme.Colors.errorBackground,
+                dismissible: true
+            )
+        }
+    }
+
+    private func bannerRow(
+        icon: AnyView,
+        message: String,
+        textColor: Color,
+        background: Color,
+        dismissible: Bool = false
+    ) -> some View {
+        HStack(spacing: Theme.Dimensions.smallSpacing) {
+            icon
+            Text(message)
+                .font(Theme.Fonts.caption)
+                .foregroundStyle(textColor)
+                .lineLimit(2)
+            Spacer()
+            if dismissible {
+                Button {
+                    viewModel.clearOperationState()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Theme.Colors.secondaryText)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, Theme.Dimensions.padding)
+        .padding(.vertical, Theme.Dimensions.smallSpacing)
+        .background(background)
+    }
+
+    private var liveWatchStatusView: some View {
+        HStack(spacing: Theme.Dimensions.smallSpacing) {
+            Circle()
+                .fill(watchStatusColor)
+                .frame(width: 7, height: 7)
+            Text(viewModel.liveWatchStatusText)
+                .font(Theme.Fonts.caption)
+                .foregroundStyle(Theme.Colors.secondaryText)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(
+            Capsule()
+                .fill(Theme.Colors.cardBackground)
+        )
+    }
+
+    private var watchStatusColor: Color {
+        switch viewModel.liveWatchStatus {
+        case .off:
+            return Theme.Colors.tertiaryText
+        case .syncing:
+            return Theme.Colors.pending
+        case .live:
+            return Theme.Colors.running
+        case .recovering:
+            return Theme.Colors.warning
+        }
     }
 
     // MARK: - Table Content

@@ -1,9 +1,57 @@
 import SwiftUI
 
+enum SidebarPlaceholder: String, Hashable, Sendable {
+    case projectsNamespaces
+    case clusterMembers
+    case tools
+    case charts
+    case installedApps
+    case repositories
+    case recentOperations
+    case moreResources
+}
+
+struct CustomResourceNavigationTarget: Hashable, Sendable {
+    let id: String
+    let name: String
+    let kind: String
+    let plural: String
+    let group: String
+    let version: String
+    let scope: String
+
+    init(definition: CustomResourceDefinitionInfo) {
+        self.id = definition.id
+        self.name = definition.name
+        self.kind = definition.kind
+        self.plural = definition.plural
+        self.group = definition.group
+        self.version = definition.version
+        self.scope = definition.scope
+    }
+
+    var definitionInfo: CustomResourceDefinitionInfo {
+        CustomResourceDefinitionInfo(
+            id: id,
+            name: name,
+            kind: kind,
+            plural: plural,
+            group: group,
+            version: version,
+            scope: scope,
+            shortNames: []
+        )
+    }
+
+    var displayName: String {
+        kind + "s"
+    }
+}
+
 enum SidebarSelection: Hashable, Sendable {
-    case dashboard
-    case unifiedWorkloads
     case resource(ResourceKind)
+    case customResource(CustomResourceNavigationTarget)
+    case placeholder(SidebarPlaceholder)
 }
 
 @Observable
@@ -22,7 +70,7 @@ final class AppState: @unchecked Sendable {
     var clusters: [ClusterConnection] = []
     var activeClusterID: UUID?
     var selectedNamespace: String?
-    var sidebarSelection: SidebarSelection? = .dashboard
+    var sidebarSelection: SidebarSelection? = .resource(.pod)
     var selectedResourceID: String?
     var isDetailPanelOpen: Bool = false
     private(set) var inspectorDetailWidth: CGFloat = AppState.loadInspectorDetailWidth()
@@ -71,16 +119,16 @@ final class AppState: @unchecked Sendable {
     // MARK: - Computed compat properties
 
     var showDashboard: Bool {
-        get { sidebarSelection == .dashboard }
+        get { false }
         set {
-            if newValue { sidebarSelection = .dashboard }
+            if newValue { sidebarSelection = .resource(.node) }
         }
     }
 
     var showUnifiedWorkloads: Bool {
-        get { sidebarSelection == .unifiedWorkloads }
+        get { false }
         set {
-            if newValue { sidebarSelection = .unifiedWorkloads }
+            if newValue { sidebarSelection = .resource(.pod) }
         }
     }
 
@@ -94,10 +142,15 @@ final class AppState: @unchecked Sendable {
         }
     }
 
+    var selectedCustomResourceTarget: CustomResourceNavigationTarget? {
+        guard case .customResource(let target) = sidebarSelection else { return nil }
+        return target
+    }
+
     func selectCluster(_ id: UUID) {
         activeClusterID = id
         selectedNamespace = nil
-        sidebarSelection = .dashboard
+        sidebarSelection = .resource(.pod)
         selectedResourceID = nil
         isDetailPanelOpen = false
         isYAMLEditorOpen = false

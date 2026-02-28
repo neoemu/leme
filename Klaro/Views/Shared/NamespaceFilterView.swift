@@ -24,22 +24,24 @@ struct NamespaceFilterView: View {
             HStack(spacing: Theme.Dimensions.smallSpacing) {
                 Image(systemName: "line.3.horizontal.decrease.circle")
                     .font(.system(size: 12))
+                    .foregroundStyle(Theme.Colors.sidebarMutedText)
 
                 Text(appState.selectedNamespace ?? "All Namespaces")
                     .font(Theme.Fonts.sidebarItem)
+                    .foregroundStyle(Theme.Colors.sidebarText)
                     .lineLimit(1)
 
                 Spacer()
 
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.system(size: 9))
-                    .foregroundStyle(Theme.Colors.secondaryText)
+                    .foregroundStyle(Theme.Colors.sidebarMutedText)
             }
             .padding(.horizontal, Theme.Dimensions.spacing)
             .padding(.vertical, Theme.Dimensions.smallSpacing)
             .background(
                 RoundedRectangle(cornerRadius: Theme.Dimensions.cornerRadius)
-                    .fill(Color.secondary.opacity(0.1))
+                    .fill(Color.white.opacity(0.10))
             )
         }
         .menuStyle(.borderlessButton)

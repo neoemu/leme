@@ -60,16 +60,6 @@ struct ReplicaSetListView: View {
                 }
             }
         )
-        .alert("Delete Failed", isPresented: $viewModel.showDeleteError) {
-            Button("OK") {}
-        } message: {
-            Text(viewModel.deleteError ?? "Unknown error")
-        }
-        .alert("Scale Failed", isPresented: $viewModel.showScaleError) {
-            Button("OK") {}
-        } message: {
-            Text(viewModel.scaleError ?? "Unknown error")
-        }
         .task { await loadData() }
         .onChange(of: appState.selectedNamespace) { _, _ in
             Task { await loadData() }

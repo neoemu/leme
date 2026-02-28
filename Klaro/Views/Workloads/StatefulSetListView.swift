@@ -66,21 +66,6 @@ struct StatefulSetListView: View {
                 }
             }
         )
-        .alert("Delete Failed", isPresented: $viewModel.showDeleteError) {
-            Button("OK") {}
-        } message: {
-            Text(viewModel.deleteError ?? "Unknown error")
-        }
-        .alert("Scale Failed", isPresented: $viewModel.showScaleError) {
-            Button("OK") {}
-        } message: {
-            Text(viewModel.scaleError ?? "Unknown error")
-        }
-        .alert("Restart Failed", isPresented: $viewModel.showRestartError) {
-            Button("OK") {}
-        } message: {
-            Text(viewModel.restartError ?? "Unknown error")
-        }
         .task {
             await loadResources()
         }

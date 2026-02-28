@@ -120,7 +120,7 @@ final class ResourceDetailViewModel {
 
     func applyYAML(_ yaml: String, namespace: String?) async {
         do {
-            try await kubernetesService.applyYAML(yaml, in: namespace)
+            _ = try await kubernetesService.applyYAML(yaml, in: namespace)
         } catch {
             errorMessage = error.localizedDescription
         }

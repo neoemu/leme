@@ -18,7 +18,7 @@ enum ResourceKind: String, CaseIterable, Identifiable, Sendable, Hashable {
     case service = "Service"
     case ingress = "Ingress"
     case endpoint = "Endpoint"
-    case networkPolicy = "NetworkPolicy"
+    case horizontalPodAutoscaler = "HorizontalPodAutoscaler"
 
     // Configuration
     case configMap = "ConfigMap"
@@ -36,6 +36,12 @@ enum ResourceKind: String, CaseIterable, Identifiable, Sendable, Hashable {
     case roleBinding = "RoleBinding"
     case clusterRoleBinding = "ClusterRoleBinding"
 
+    // Policy
+    case limitRange = "LimitRange"
+    case networkPolicy = "NetworkPolicy"
+    case podDisruptionBudget = "PodDisruptionBudget"
+    case resourceQuota = "ResourceQuota"
+
     // Events
     case event = "Event"
 
@@ -47,7 +53,7 @@ enum ResourceKind: String, CaseIterable, Identifiable, Sendable, Hashable {
             return .cluster
         case .pod, .deployment, .statefulSet, .daemonSet, .job, .cronJob, .replicaSet:
             return .workloads
-        case .service, .ingress, .endpoint, .networkPolicy:
+        case .service, .ingress, .endpoint, .horizontalPodAutoscaler:
             return .network
         case .configMap, .secret:
             return .configuration
@@ -55,6 +61,8 @@ enum ResourceKind: String, CaseIterable, Identifiable, Sendable, Hashable {
             return .storage
         case .serviceAccount, .role, .clusterRole, .roleBinding, .clusterRoleBinding:
             return .accessControl
+        case .limitRange, .networkPolicy, .podDisruptionBudget, .resourceQuota:
+            return .policy
         case .event:
             return .events
         }
@@ -74,7 +82,7 @@ enum ResourceKind: String, CaseIterable, Identifiable, Sendable, Hashable {
         case .service: return "network"
         case .ingress: return "arrow.right.to.line"
         case .endpoint: return "point.3.connected.trianglepath.dotted"
-        case .networkPolicy: return "shield.checkered"
+        case .horizontalPodAutoscaler: return "chart.line.uptrend.xyaxis"
         case .configMap: return "doc.text"
         case .secret: return "lock"
         case .persistentVolumeClaim: return "externaldrive"
@@ -85,6 +93,10 @@ enum ResourceKind: String, CaseIterable, Identifiable, Sendable, Hashable {
         case .clusterRole: return "person.badge.shield.checkmark"
         case .roleBinding: return "link.circle"
         case .clusterRoleBinding: return "link.badge.plus"
+        case .limitRange: return "dial.low"
+        case .networkPolicy: return "shield.checkered"
+        case .podDisruptionBudget: return "shield"
+        case .resourceQuota: return "chart.bar.xaxis"
         case .event: return "bell"
         }
     }
@@ -96,6 +108,7 @@ enum ResourceKind: String, CaseIterable, Identifiable, Sendable, Hashable {
         case .namespace: return "Namespaces"
         case .storageClass: return "Storage Classes"
         case .networkPolicy: return "Network Policies"
+        case .horizontalPodAutoscaler: return "Horizontal Pod Autoscalers"
         case .persistentVolumeClaim: return "Persistent Volume Claims"
         case .persistentVolume: return "Persistent Volumes"
         case .configMap: return "Config Maps"
@@ -107,6 +120,9 @@ enum ResourceKind: String, CaseIterable, Identifiable, Sendable, Hashable {
         case .daemonSet: return "Daemon Sets"
         case .cronJob: return "Cron Jobs"
         case .replicaSet: return "Replica Sets"
+        case .limitRange: return "Limit Ranges"
+        case .podDisruptionBudget: return "Pod Disruption Budgets"
+        case .resourceQuota: return "Resource Quotas"
         default: return rawValue + "s"
         }
     }

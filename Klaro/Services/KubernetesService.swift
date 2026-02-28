@@ -28,6 +28,71 @@ enum KubernetesServiceError: LocalizedError, Sendable {
     }
 }
 
+enum KubernetesOperationErrorCategory: String, Sendable {
+    case validation
+    case rbac
+    case connectivity
+    case unknown
+}
+
+struct KubernetesOperationError: LocalizedError, Sendable {
+    let category: KubernetesOperationErrorCategory
+    let detail: String
+
+    var errorDescription: String? {
+        switch category {
+        case .validation:
+            return "Validation error: \(detail)"
+        case .rbac:
+            return "Permission denied (RBAC): \(detail)"
+        case .connectivity:
+            return "Cluster connectivity error: \(detail)"
+        case .unknown:
+            return detail
+        }
+    }
+}
+
+struct ApplyResult: Sendable {
+    enum Mode: String, Sendable {
+        case patch
+        case apply
+    }
+
+    let mode: Mode
+    let stdout: String
+    let warnings: [String]
+}
+
+struct CustomResourceDefinitionInfo: Identifiable, Sendable, Hashable {
+    let id: String
+    let name: String
+    let kind: String
+    let plural: String
+    let group: String
+    let version: String
+    let scope: String
+    let shortNames: [String]
+
+    var resourceIdentifier: String {
+        "\(plural).\(group)"
+    }
+
+    var isNamespaced: Bool {
+        scope.caseInsensitiveCompare("Namespaced") == .orderedSame
+    }
+}
+
+struct CustomResourceItem: Identifiable, Sendable, Hashable {
+    let id: String
+    let name: String
+    let namespace: String?
+    let status: String
+    let age: Date?
+    let labels: [String: String]
+    let annotations: [String: String]
+}
+
 // MARK: - KubernetesService
 
 /// A facade actor that wraps a KubernetesClient instance and provides
@@ -166,6 +231,193 @@ actor KubernetesService {
         try await scopedClient.delete(name: name)
     }
 
+    // MARK: - Custom Resource Operations
+
+    func listCustomResourceDefinitions(context: String? = nil) async throws -> [CustomResourceDefinitionInfo] {
+        var arguments = ["get", "crd", "--request-timeout=15s", "-o", "json"]
+        if let context, !context.isEmpty {
+            arguments.append(contentsOf: ["--context", context])
+        }
+
+        let output = try executeKubectl(arguments: arguments)
+        guard let jsonData = output.stdout.data(using: .utf8) else {
+            throw KubernetesServiceError.operationFailed("Failed to decode CRD list output.")
+        }
+
+        guard let root = try JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+              let items = root["items"] as? [[String: Any]] else {
+            throw KubernetesServiceError.operationFailed("Unexpected CRD list response shape.")
+        }
+
+        var definitions: [CustomResourceDefinitionInfo] = []
+        for item in items {
+            guard let metadata = item["metadata"] as? [String: Any],
+                  let metadataName = metadata["name"] as? String,
+                  let spec = item["spec"] as? [String: Any],
+                  let names = spec["names"] as? [String: Any],
+                  let plural = names["plural"] as? String,
+                  let kind = names["kind"] as? String,
+                  let group = spec["group"] as? String,
+                  let scope = spec["scope"] as? String else {
+                continue
+            }
+
+            let shortNames = names["shortNames"] as? [String] ?? []
+            let versions = spec["versions"] as? [[String: Any]] ?? []
+            let version = Self.preferredCRDVersion(from: versions)
+                ?? (spec["version"] as? String)
+                ?? "v1"
+
+            definitions.append(
+                CustomResourceDefinitionInfo(
+                    id: metadataName,
+                    name: metadataName,
+                    kind: kind,
+                    plural: plural,
+                    group: group,
+                    version: version,
+                    scope: scope,
+                    shortNames: shortNames
+                )
+            )
+        }
+
+        return definitions.sorted { lhs, rhs in
+            if lhs.kind == rhs.kind {
+                return lhs.group.localizedCaseInsensitiveCompare(rhs.group) == .orderedAscending
+            }
+            return lhs.kind.localizedCaseInsensitiveCompare(rhs.kind) == .orderedAscending
+        }
+    }
+
+    func listCustomResources(
+        definition: CustomResourceDefinitionInfo,
+        namespace: String?,
+        context: String? = nil
+    ) async throws -> [CustomResourceItem] {
+        var arguments = ["get", definition.resourceIdentifier, "--request-timeout=15s"]
+
+        if definition.isNamespaced {
+            if let namespace, !namespace.isEmpty {
+                arguments.append(contentsOf: ["-n", namespace])
+            } else {
+                arguments.append("-A")
+            }
+        }
+
+        if let context, !context.isEmpty {
+            arguments.append(contentsOf: ["--context", context])
+        }
+
+        arguments.append(contentsOf: ["-o", "json"])
+
+        let output = try executeKubectl(arguments: arguments)
+        guard let jsonData = output.stdout.data(using: .utf8) else {
+            throw KubernetesServiceError.operationFailed("Failed to decode custom resource list output.")
+        }
+
+        guard let root = try JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+              let items = root["items"] as? [[String: Any]] else {
+            throw KubernetesServiceError.operationFailed("Unexpected custom resource list response shape.")
+        }
+
+        return items.compactMap { item in
+            guard let metadata = item["metadata"] as? [String: Any],
+                  let name = metadata["name"] as? String else {
+                return nil
+            }
+
+            let resourceNamespace = metadata["namespace"] as? String
+            let id = resourceNamespace.map { "\($0)/\(name)" } ?? name
+            let labels = metadata["labels"] as? [String: String] ?? [:]
+            let annotations = metadata["annotations"] as? [String: String] ?? [:]
+            let creationTimestamp = metadata["creationTimestamp"] as? String
+            let status = Self.extractCustomResourceStatus(from: item)
+
+            return CustomResourceItem(
+                id: id,
+                name: name,
+                namespace: resourceNamespace,
+                status: status,
+                age: Self.parseKubernetesDate(creationTimestamp),
+                labels: labels,
+                annotations: annotations
+            )
+        }
+        .sorted { lhs, rhs in
+            if lhs.namespace == rhs.namespace {
+                return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+            }
+            return (lhs.namespace ?? "").localizedCaseInsensitiveCompare(rhs.namespace ?? "") == .orderedAscending
+        }
+    }
+
+    func getCustomResourceYAML(
+        definition: CustomResourceDefinitionInfo,
+        name: String,
+        namespace: String?,
+        context: String? = nil
+    ) async throws -> String {
+        var arguments = ["get", definition.resourceIdentifier, name, "--request-timeout=15s"]
+        if definition.isNamespaced, let namespace, !namespace.isEmpty {
+            arguments.append(contentsOf: ["-n", namespace])
+        }
+        if let context, !context.isEmpty {
+            arguments.append(contentsOf: ["--context", context])
+        }
+        arguments.append(contentsOf: ["-o", "yaml"])
+
+        let output = try executeKubectl(arguments: arguments)
+        return output.stdout
+    }
+
+    func deleteCustomResource(
+        definition: CustomResourceDefinitionInfo,
+        name: String,
+        namespace: String?,
+        context: String? = nil
+    ) async throws {
+        var arguments = ["delete", definition.resourceIdentifier, name, "--request-timeout=15s"]
+        if definition.isNamespaced, let namespace, !namespace.isEmpty {
+            arguments.append(contentsOf: ["-n", namespace])
+        }
+        if let context, !context.isEmpty {
+            arguments.append(contentsOf: ["--context", context])
+        }
+
+        _ = try executeKubectl(arguments: arguments)
+    }
+
+    func hasAnyCustomResourceInstances(
+        definition: CustomResourceDefinitionInfo,
+        namespace: String?,
+        context: String? = nil
+    ) async throws -> Bool {
+        let rawPath: String
+        if definition.isNamespaced, let namespace, !namespace.isEmpty {
+            rawPath = "/apis/\(definition.group)/\(definition.version)/namespaces/\(namespace)/\(definition.plural)?limit=1"
+        } else {
+            rawPath = "/apis/\(definition.group)/\(definition.version)/\(definition.plural)?limit=1"
+        }
+
+        var arguments = ["get", "--raw", rawPath, "--request-timeout=2s"]
+        if let context, !context.isEmpty {
+            arguments.append(contentsOf: ["--context", context])
+        }
+
+        let output = try executeKubectl(arguments: arguments)
+        guard let jsonData = output.stdout.data(using: .utf8) else {
+            return false
+        }
+
+        guard let root = try JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+              let items = root["items"] as? [[String: Any]] else {
+            return false
+        }
+
+        return !items.isEmpty
+    }
+
     // MARK: - Create / Update Operations
 
     /// Creates a namespaced resource.
@@ -245,7 +497,7 @@ actor KubernetesService {
         originalYAML: String? = nil,
         in namespace: String? = nil,
         context: String? = nil
-    ) async throws {
+    ) async throws -> ApplyResult {
         if let originalYAML,
            let patchRequest = try buildPatchRequest(
                originalYAML: originalYAML,
@@ -259,8 +511,12 @@ actor KubernetesService {
             if let requestNamespace = patchRequest.namespace, !requestNamespace.isEmpty {
                 patchArguments.append(contentsOf: ["-n", requestNamespace])
             }
-            _ = try executeKubectl(arguments: patchArguments, stdin: patchRequest.targetManifestYAML)
-            return
+            let output = try executeKubectl(arguments: patchArguments, stdin: patchRequest.targetManifestYAML)
+            return ApplyResult(
+                mode: .patch,
+                stdout: output.stdout,
+                warnings: parseKubectlWarnings(from: output.stderr)
+            )
         }
 
         let sanitizedManifest = try sanitizeManifestForApply(yamlString)
@@ -272,11 +528,20 @@ actor KubernetesService {
             applyArguments.append(contentsOf: ["-n", namespace])
         }
         applyArguments.append(contentsOf: ["-f", "-"])
-        _ = try executeKubectl(arguments: applyArguments, stdin: sanitizedManifest)
+        let output = try executeKubectl(arguments: applyArguments, stdin: sanitizedManifest)
+        return ApplyResult(
+            mode: .apply,
+            stdout: output.stdout,
+            warnings: parseKubectlWarnings(from: output.stderr)
+        )
     }
 
-    @discardableResult
-    private func executeKubectl(arguments: [String], stdin: String) throws -> String {
+    private struct KubectlCommandOutput {
+        let stdout: String
+        let stderr: String
+    }
+
+    private func executeKubectl(arguments: [String], stdin: String? = nil) throws -> KubectlCommandOutput {
         let kubectlPath = try findKubectl()
 
         let process = Process()
@@ -284,11 +549,30 @@ actor KubernetesService {
         process.arguments = arguments
 
         let stdinPipe = Pipe()
-        let stdoutPipe = Pipe()
-        let stderrPipe = Pipe()
         process.standardInput = stdinPipe
-        process.standardOutput = stdoutPipe
-        process.standardError = stderrPipe
+
+        let fileManager = FileManager.default
+        let tempDirectory = fileManager.temporaryDirectory
+        let stdoutURL = tempDirectory.appendingPathComponent("klaro-kubectl-stdout-\(UUID().uuidString).tmp")
+        let stderrURL = tempDirectory.appendingPathComponent("klaro-kubectl-stderr-\(UUID().uuidString).tmp")
+
+        guard fileManager.createFile(atPath: stdoutURL.path, contents: nil),
+              fileManager.createFile(atPath: stderrURL.path, contents: nil),
+              let stdoutHandle = FileHandle(forWritingAtPath: stdoutURL.path),
+              let stderrHandle = FileHandle(forWritingAtPath: stderrURL.path) else {
+            throw KubernetesServiceError.operationFailed("Failed to create kubectl output buffers.")
+        }
+
+        process.standardOutput = stdoutHandle
+        process.standardError = stderrHandle
+
+        defer {
+            try? stdinPipe.fileHandleForWriting.close()
+            try? stdoutHandle.close()
+            try? stderrHandle.close()
+            try? fileManager.removeItem(at: stdoutURL)
+            try? fileManager.removeItem(at: stderrURL)
+        }
 
         var environment = ProcessInfo.processInfo.environment
         if let existingPath = environment["PATH"] {
@@ -301,31 +585,37 @@ actor KubernetesService {
         do {
             try process.run()
         } catch {
-            throw KubernetesServiceError.operationFailed("Failed to start kubectl: \(error.localizedDescription)")
+            throw KubernetesOperationError(
+                category: .connectivity,
+                detail: "Failed to start kubectl: \(error.localizedDescription)"
+            )
         }
 
-        if let inputData = stdin.data(using: .utf8) {
+        if let stdin, let inputData = stdin.data(using: .utf8) {
             stdinPipe.fileHandleForWriting.write(inputData)
         }
         try? stdinPipe.fileHandleForWriting.close()
 
         process.waitUntilExit()
 
-        let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-        let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+        let stdoutData = (try? Data(contentsOf: stdoutURL)) ?? Data()
+        let stderrData = (try? Data(contentsOf: stderrURL)) ?? Data()
         let stdout = String(data: stdoutData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let stderr = String(data: stderrData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
         guard process.terminationStatus == 0 else {
             let detail = stderr.isEmpty ? stdout : stderr
-            throw KubernetesServiceError.operationFailed(
-                detail.isEmpty
-                    ? "kubectl command failed with exit code \(process.terminationStatus)"
-                    : detail
+            let message = detail.isEmpty
+                ? "kubectl command failed with exit code \(process.terminationStatus)"
+                : detail
+
+            throw KubernetesOperationError(
+                category: Self.classifyOperationError(detail: message),
+                detail: message
             )
         }
 
-        return stdout
+        return KubectlCommandOutput(stdout: stdout, stderr: stderr)
     }
 
     private func findKubectl() throws -> String {
@@ -366,6 +656,120 @@ actor KubernetesService {
         throw KubernetesServiceError.operationFailed(
             "kubectl not found. Install kubectl and ensure it is in PATH."
         )
+    }
+
+    static func classifyOperationError(detail: String) -> KubernetesOperationErrorCategory {
+        let normalized = detail.lowercased()
+
+        if normalized.contains("forbidden")
+            || normalized.contains("cannot list resource")
+            || normalized.contains("cannot get resource")
+            || normalized.contains("cannot patch resource")
+            || normalized.contains("cannot create resource")
+            || normalized.contains("cannot update resource")
+            || normalized.contains("cannot delete resource") {
+            return .rbac
+        }
+
+        if normalized.contains("unable to connect to the server")
+            || normalized.contains("connection refused")
+            || normalized.contains("timed out")
+            || normalized.contains("timeout")
+            || normalized.contains("context deadline exceeded")
+            || normalized.contains("no such host")
+            || normalized.contains("i/o timeout")
+            || normalized.contains("tls handshake timeout")
+            || normalized.contains("connection reset by peer") {
+            return .connectivity
+        }
+
+        if normalized.contains("error validating")
+            || normalized.contains("validation failed")
+            || normalized.contains("invalid")
+            || normalized.contains("cannot be handled as")
+            || normalized.contains("cannot parse")
+            || normalized.contains("json parse")
+            || normalized.contains("yaml parse") {
+            return .validation
+        }
+
+        return .unknown
+    }
+
+    static func classifyOperationError(_ error: Error) -> KubernetesOperationErrorCategory {
+        if let operationError = error as? KubernetesOperationError {
+            return operationError.category
+        }
+        if let serviceError = error as? KubernetesServiceError,
+           case .operationFailed(let detail) = serviceError {
+            return classifyOperationError(detail: detail)
+        }
+        return .unknown
+    }
+
+    private func parseKubectlWarnings(from stderr: String) -> [String] {
+        guard !stderr.isEmpty else { return [] }
+        return stderr
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .filter { $0.lowercased().hasPrefix("warning:") }
+    }
+
+    private static func preferredCRDVersion(from versions: [[String: Any]]) -> String? {
+        if let storageVersion = versions.first(where: { ($0["storage"] as? Bool) == true }),
+           let name = storageVersion["name"] as? String {
+            return name
+        }
+
+        if let servedVersion = versions.first(where: { ($0["served"] as? Bool) == true }),
+           let name = servedVersion["name"] as? String {
+            return name
+        }
+
+        return versions.first?["name"] as? String
+    }
+
+    private static func extractCustomResourceStatus(from item: [String: Any]) -> String {
+        guard let status = item["status"] as? [String: Any] else {
+            return "Active"
+        }
+
+        if let phase = status["phase"] as? String, !phase.isEmpty {
+            return phase
+        }
+
+        if let conditions = status["conditions"] as? [[String: Any]] {
+            if let healthy = conditions.first(where: { ($0["status"] as? String) == "True" }),
+               let type = healthy["type"] as? String, !type.isEmpty {
+                return type
+            }
+
+            if let latest = conditions.last,
+               let type = latest["type"] as? String, !type.isEmpty {
+                return type
+            }
+        }
+
+        if let reason = status["reason"] as? String, !reason.isEmpty {
+            return reason
+        }
+
+        return "Active"
+    }
+
+    private static func parseKubernetesDate(_ value: String?) -> Date? {
+        guard let value, !value.isEmpty else { return nil }
+
+        let fractionalFormatter = ISO8601DateFormatter()
+        fractionalFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = fractionalFormatter.date(from: value) {
+            return date
+        }
+
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: value)
     }
 
     // MARK: - Private Helpers

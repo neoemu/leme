@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 import SwiftkubeClient
 import SwiftkubeModel
@@ -69,11 +70,6 @@ struct NodeListView: View {
                 nodeCellRenderer(column: column, resource: resource)
             }
         )
-        .alert("Delete Failed", isPresented: $viewModel.showDeleteError) {
-            Button("OK") {}
-        } message: {
-            Text(viewModel.deleteError ?? "Unknown error")
-        }
         .task {
             await loadData()
             await startLiveUpdates()
@@ -178,10 +174,15 @@ struct NodeListView: View {
     // MARK: - Data Loading
 
     private func loadData(showLoading: Bool = true) async {
-        if !showLoading {
+        let isLiveReloadRequest = !showLoading
+        if isLiveReloadRequest {
             guard !isLiveReloading else { return }
             isLiveReloading = true
-            defer { isLiveReloading = false }
+        }
+        defer {
+            if isLiveReloadRequest {
+                isLiveReloading = false
+            }
         }
 
         guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else {
@@ -203,7 +204,7 @@ struct NodeListView: View {
             // Extract capacity from each node
             var capacities: [String: MetricsService.NodeCapacity] = [:]
             for node in nodeList.items {
-                let name = node.name ?? ""
+                let name = stringValue(node.name)
                 capacities[name] = MetricsService.extractNodeCapacity(from: node)
             }
             nodeCapacities = capacities
@@ -236,14 +237,21 @@ struct NodeListView: View {
 
         let watcher = ResourceWatcher(client: client)
         nodeWatcher = watcher
+        await MainActor.run {
+            viewModel.liveWatchStatus = .syncing
+        }
 
         for kind in [ResourceKind.node, .pod] {
             let task = Task {
                 let stream = await watcher.watch(kind: kind, in: nil)
                 for await event in stream {
                     guard !Task.isCancelled else { break }
-                    guard event.type != .error else { continue }
                     await MainActor.run {
+                        if event.type == .error {
+                            viewModel.liveWatchStatus = .recovering(lastEventAt: nil, reason: event.resourceName)
+                            return
+                        }
+                        viewModel.liveWatchStatus = .live(lastEventAt: Date())
                         scheduleLiveReload()
                     }
                 }
@@ -284,6 +292,7 @@ struct NodeListView: View {
             }
         }
         nodeWatcher = nil
+        viewModel.liveWatchStatus = .off
     }
 
     // MARK: - Node Mapper
@@ -323,7 +332,14 @@ struct NodeListView: View {
 
         // Extract taints for tooltip
         let taints = node.spec?.taints ?? []
-        let taintsStr = taints.map { "\($0.key ?? "")=\($0.value ?? ""):\($0.effect ?? "")" }.joined(separator: ", ")
+        let taintsStr = taints.map { taint in
+            let key = stringValue(taint.key)
+            let value = stringValue(taint.value)
+            let effect = stringValue(taint.effect)
+            return "\(key)=\(value):\(effect)"
+        }.joined(separator: ", ")
+
+        let nodeName = stringValue(node.name)
 
         var extra: [String: String] = [:]
         extra["roles"] = rolesString
@@ -333,8 +349,8 @@ struct NodeListView: View {
         extra["taints"] = taintsStr
 
         return ResourceItem(
-            id: node.name ?? UUID().uuidString,
-            name: node.name ?? "",
+            id: nodeName.isEmpty ? UUID().uuidString : nodeName,
+            name: nodeName,
             namespace: nil,
             status: status,
             age: node.metadata?.creationTimestamp,
@@ -343,5 +359,13 @@ struct NodeListView: View {
             kind: .node,
             extraColumns: extra
         )
+    }
+
+    private nonisolated func stringValue(_ value: String?) -> String {
+        value ?? ""
+    }
+
+    private nonisolated func stringValue(_ value: String) -> String {
+        value
     }
 }

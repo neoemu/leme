@@ -57,11 +57,6 @@ struct JobListView: View {
                 }
             }
         )
-        .alert("Delete Failed", isPresented: $viewModel.showDeleteError) {
-            Button("OK") {}
-        } message: {
-            Text(viewModel.deleteError ?? "Unknown error")
-        }
         .task {
             await loadResources()
         }

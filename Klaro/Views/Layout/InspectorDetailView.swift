@@ -77,8 +77,16 @@ struct InspectorDetailView: View {
                 await detail.loadDetail(networking.v1.Ingress.self, name: name, namespace: namespace ?? "default")
             case .endpoint:
                 await detail.loadDetail(core.v1.Endpoints.self, name: name, namespace: namespace ?? "default")
+            case .horizontalPodAutoscaler:
+                await detail.loadDetail(autoscaling.v2.HorizontalPodAutoscaler.self, name: name, namespace: namespace ?? "default")
             case .networkPolicy:
                 await detail.loadDetail(networking.v1.NetworkPolicy.self, name: name, namespace: namespace ?? "default")
+            case .limitRange:
+                await detail.loadDetail(core.v1.LimitRange.self, name: name, namespace: namespace ?? "default")
+            case .podDisruptionBudget:
+                await detail.loadDetail(policy.v1.PodDisruptionBudget.self, name: name, namespace: namespace ?? "default")
+            case .resourceQuota:
+                await detail.loadDetail(core.v1.ResourceQuota.self, name: name, namespace: namespace ?? "default")
 
             // Configuration
             case .configMap:

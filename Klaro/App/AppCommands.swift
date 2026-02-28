@@ -12,6 +12,10 @@ struct AppCommands: Commands {
 
             Divider()
 
+            Button("More Resources") {
+                appState.sidebarSelection = .placeholder(.moreResources)
+            }
+
             ForEach(ResourceCategory.allCases) { category in
                 Menu(category.rawValue) {
                     ForEach(category.resourceKinds) { kind in

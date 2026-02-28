@@ -37,3 +37,31 @@ import Testing
     #expect(ResourceKind.serviceAccount.category == .accessControl)
     #expect(ResourceKind.event.category == .events)
 }
+
+@Test func kubernetesErrorClassificationByDetail() {
+    #expect(
+        KubernetesService.classifyOperationError(
+            detail: "Error from server (Forbidden): deployments.apps is forbidden"
+        ) == .rbac
+    )
+
+    #expect(
+        KubernetesService.classifyOperationError(
+            detail: "Unable to connect to the server: dial tcp 10.0.0.1:443: i/o timeout"
+        ) == .connectivity
+    )
+
+    #expect(
+        KubernetesService.classifyOperationError(
+            detail: "error validating data: ValidationError(Deployment.spec): unknown field"
+        ) == .validation
+    )
+}
+
+@Test func kubernetesErrorClassificationByError() {
+    let rbac = KubernetesOperationError(
+        category: .rbac,
+        detail: "deployments.apps is forbidden"
+    )
+    #expect(KubernetesService.classifyOperationError(rbac) == .rbac)
+}

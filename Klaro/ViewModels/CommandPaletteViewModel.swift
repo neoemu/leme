@@ -41,6 +41,17 @@ final class CommandPaletteViewModel {
             appState.isCommandPaletteOpen = false
         })
 
+        result.append(CommandAction(
+            title: "More Resources",
+            subtitle: "Open grouped resources and CRDs",
+            icon: "square.grid.3x3",
+            category: "Navigate"
+        ) { [weak appState] in
+            guard let appState else { return }
+            appState.sidebarSelection = .placeholder(.moreResources)
+            appState.isCommandPaletteOpen = false
+        })
+
         // Navigate to each ResourceKind
         for kind in ResourceKind.allCases {
             result.append(CommandAction(
