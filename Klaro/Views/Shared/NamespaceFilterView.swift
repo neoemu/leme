@@ -41,7 +41,11 @@ struct NamespaceFilterView: View {
             .padding(.vertical, Theme.Dimensions.smallSpacing)
             .background(
                 RoundedRectangle(cornerRadius: Theme.Dimensions.cornerRadius)
-                    .fill(Color.white.opacity(0.10))
+                    .fill(Theme.Colors.sidebarSectionBackground.opacity(0.92))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Theme.Dimensions.cornerRadius)
+                            .stroke(Color.white.opacity(0.06), lineWidth: 1)
+                    )
             )
         }
         .menuStyle(.borderlessButton)

@@ -6,104 +6,57 @@ struct RoleListView: View {
     @Environment(AppState.self) private var appState
     @Environment(ClusterViewModel.self) private var clusterViewModel
     @State private var viewModel = ResourceListViewModel()
-    @State private var resourceToDelete: ResourceItem?
-    @State private var showDeleteConfirmation = false
+
+    private let columns: [ResourceTableColumn] = [
+        ResourceTableColumn(title: "Name", key: "name", sortField: .name),
+        ResourceTableColumn(title: "Namespace", key: "namespace", width: 140, sortField: .namespace),
+        ResourceTableColumn(title: "Rules", key: "rules", width: 80),
+        ResourceTableColumn(title: "Age", key: "age", width: 70, sortField: .age),
+    ]
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Header with icon, title, search
-            HStack {
-                Image(systemName: ResourceKind.role.icon)
-                    .foregroundStyle(Theme.Colors.accent)
-                Text(ResourceKind.role.pluralName)
-                    .font(Theme.Fonts.title)
-                Spacer()
-                TextField("Search...", text: $viewModel.searchText)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 200)
-            }
-            .padding(.horizontal, Theme.Dimensions.padding)
-            .padding(.top, Theme.Dimensions.padding)
-
-            Divider()
-
-            if viewModel.isLoading {
-                ProgressView()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if viewModel.filteredResources.isEmpty {
-                EmptyStateView(
-                    icon: "person.badge.key",
-                    title: "No Roles",
-                    message: "No roles found in the current namespace."
-                )
-            } else {
-                Table(viewModel.filteredResources, selection: Binding(
-                    get: { appState.selectedResourceID },
-                    set: { appState.selectResource($0) }
-                )) {
-                    TableColumn("Name") { item in
-                        Text(item.name)
-                            .font(Theme.Fonts.tableCell)
-                            .contextMenu {
-                                Button(role: .destructive) {
-                                    resourceToDelete = item
-                                    showDeleteConfirmation = true
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
-                                }
-                            }
-                    }
-                    TableColumn("Namespace") { item in
-                        Text(item.namespace ?? "")
-                            .font(Theme.Fonts.tableCell)
-                            .foregroundStyle(Theme.Colors.secondaryText)
-                    }
-                    TableColumn("Rules") { item in
-                        Text(item.extraColumns["rules"] ?? "0")
-                            .font(Theme.Fonts.tableCell)
-                            .foregroundStyle(Theme.Colors.secondaryText)
-                    }
-                    TableColumn("Age") { item in
-                        if let date = item.age {
-                            AgeLabel(date: date)
-                        } else {
-                            Text("-")
-                                .font(Theme.Fonts.tableCell)
-                                .foregroundStyle(Theme.Colors.tertiaryText)
-                        }
+        ResourceTableView(
+            columns: columns,
+            viewModel: viewModel,
+            onViewYAML: { resource in
+                Task {
+                    guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                    do {
+                        let yaml = try await viewModel.fetchResourceYAML(
+                            kind: .role,
+                            name: resource.name,
+                            namespace: resource.namespace,
+                            client: client
+                        )
+                        appState.showYAMLEditor(resourceID: resource.id, title: "YAML - \(resource.name)", yaml: yaml)
+                    } catch {
+                        appState.showYAMLEditor(
+                            resourceID: resource.id,
+                            title: "YAML - \(resource.name)",
+                            yaml: "# Error loading YAML: \(error.localizedDescription)"
+                        )
                     }
                 }
-                .font(Theme.Fonts.tableCell)
+            },
+            onDelete: { resource in
+                Task {
+                    guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                    await viewModel.deleteResource(kind: .role, name: resource.name, namespace: resource.namespace, client: client)
+                }
+            },
+            onDownloadYAML: { resource in
+                Task {
+                    guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                    await viewModel.downloadResourceYAML(kind: .role, name: resource.name, namespace: resource.namespace, client: client)
+                }
             }
-        }
+        )
         .task { await loadData() }
-        .onChange(of: appState.selectedNamespace) { _, _ in
+        .onChange(of: appState.activeClusterID) { _, _ in
             Task { await loadData() }
         }
-        .confirmationDialog(
-            "Delete \(resourceToDelete?.name ?? "")?",
-            isPresented: $showDeleteConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) {
-                if let resource = resourceToDelete {
-                    Task {
-                        guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
-                        await viewModel.deleteResource(kind: .role, name: resource.name, namespace: resource.namespace, client: client)
-                    }
-                }
-                resourceToDelete = nil
-            }
-            Button("Cancel", role: .cancel) {
-                resourceToDelete = nil
-            }
-        } message: {
-            Text("This action cannot be undone.")
-        }
-        .alert("Delete Failed", isPresented: $viewModel.showDeleteError) {
-            Button("OK") {}
-        } message: {
-            Text(viewModel.deleteError ?? "Unknown error")
+        .onChange(of: appState.selectedNamespace) { _, _ in
+            Task { await loadData() }
         }
     }
 
@@ -113,23 +66,26 @@ struct RoleListView: View {
             rbac.v1.Role.self,
             kind: .role,
             client: client,
-            namespace: appState.selectedNamespace
-        ) { resource in
-            let rulesCount = resource.rules?.count ?? 0
+            namespace: appState.selectedNamespace,
+            mapper: roleToResourceItem
+        )
+    }
 
-            return ResourceItem(
-                id: "\(resource.metadata?.namespace ?? "")/\(resource.name ?? "")",
-                name: resource.name ?? "",
-                namespace: resource.metadata?.namespace,
-                status: "Active",
-                age: resource.metadata?.creationTimestamp,
-                labels: resource.metadata?.labels ?? [:],
-                annotations: resource.metadata?.annotations ?? [:],
-                kind: .role,
-                extraColumns: [
-                    "rules": "\(rulesCount)",
-                ]
-            )
-        }
+    private nonisolated func roleToResourceItem(_ resource: rbac.v1.Role) -> ResourceItem {
+        let rulesCount = resource.rules?.count ?? 0
+
+        return ResourceItem(
+            id: "\(resource.metadata?.namespace ?? "")/\(resource.name ?? "")",
+            name: resource.name ?? "",
+            namespace: resource.metadata?.namespace,
+            status: "Active",
+            age: resource.metadata?.creationTimestamp,
+            labels: resource.metadata?.labels ?? [:],
+            annotations: resource.metadata?.annotations ?? [:],
+            kind: .role,
+            extraColumns: [
+                "rules": "\(rulesCount)",
+            ]
+        )
     }
 }

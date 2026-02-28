@@ -6,109 +6,58 @@ struct IngressListView: View {
     @Environment(AppState.self) private var appState
     @Environment(ClusterViewModel.self) private var clusterViewModel
     @State private var viewModel = ResourceListViewModel()
-    @State private var resourceToDelete: ResourceItem?
-    @State private var showDeleteConfirmation = false
+
+    private let columns: [ResourceTableColumn] = [
+        ResourceTableColumn(title: "Name", key: "name", sortField: .name),
+        ResourceTableColumn(title: "Namespace", key: "namespace", width: 140, sortField: .namespace),
+        ResourceTableColumn(title: "Hosts", key: "hosts", width: 220),
+        ResourceTableColumn(title: "Paths", key: "paths", width: 220),
+        ResourceTableColumn(title: "Age", key: "age", width: 70, sortField: .age),
+    ]
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Header with icon, title, search
-            HStack {
-                Image(systemName: ResourceKind.ingress.icon)
-                    .foregroundStyle(Theme.Colors.accent)
-                Text(ResourceKind.ingress.pluralName)
-                    .font(Theme.Fonts.title)
-                Spacer()
-                TextField("Search...", text: $viewModel.searchText)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 200)
-            }
-            .padding(.horizontal, Theme.Dimensions.padding)
-            .padding(.top, Theme.Dimensions.padding)
-
-            Divider()
-
-            if viewModel.isLoading {
-                ProgressView()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if viewModel.filteredResources.isEmpty {
-                EmptyStateView(
-                    icon: "arrow.right.to.line",
-                    title: "No Ingresses",
-                    message: "No ingresses found in the current namespace."
-                )
-            } else {
-                Table(viewModel.filteredResources, selection: Binding(
-                    get: { appState.selectedResourceID },
-                    set: { appState.selectResource($0) }
-                )) {
-                    TableColumn("Name") { item in
-                        Text(item.name)
-                            .font(Theme.Fonts.tableCell)
-                            .contextMenu {
-                                Button(role: .destructive) {
-                                    resourceToDelete = item
-                                    showDeleteConfirmation = true
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
-                                }
-                            }
-                    }
-                    TableColumn("Namespace") { item in
-                        Text(item.namespace ?? "")
-                            .font(Theme.Fonts.tableCell)
-                            .foregroundStyle(Theme.Colors.secondaryText)
-                    }
-                    TableColumn("Hosts") { item in
-                        Text(item.extraColumns["hosts"] ?? "")
-                            .font(Theme.Fonts.tableCell)
-                            .foregroundStyle(Theme.Colors.secondaryText)
-                    }
-                    TableColumn("Paths") { item in
-                        Text(item.extraColumns["paths"] ?? "")
-                            .font(Theme.Fonts.tableCell)
-                            .foregroundStyle(Theme.Colors.secondaryText)
-                    }
-                    TableColumn("Age") { item in
-                        if let date = item.age {
-                            AgeLabel(date: date)
-                        } else {
-                            Text("-")
-                                .font(Theme.Fonts.tableCell)
-                                .foregroundStyle(Theme.Colors.tertiaryText)
-                        }
+        ResourceTableView(
+            columns: columns,
+            viewModel: viewModel,
+            onViewYAML: { resource in
+                Task {
+                    guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                    do {
+                        let yaml = try await viewModel.fetchResourceYAML(
+                            kind: .ingress,
+                            name: resource.name,
+                            namespace: resource.namespace,
+                            client: client
+                        )
+                        appState.showYAMLEditor(resourceID: resource.id, title: "YAML - \(resource.name)", yaml: yaml)
+                    } catch {
+                        appState.showYAMLEditor(
+                            resourceID: resource.id,
+                            title: "YAML - \(resource.name)",
+                            yaml: "# Error loading YAML: \(error.localizedDescription)"
+                        )
                     }
                 }
-                .font(Theme.Fonts.tableCell)
+            },
+            onDelete: { resource in
+                Task {
+                    guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                    await viewModel.deleteResource(kind: .ingress, name: resource.name, namespace: resource.namespace, client: client)
+                }
+            },
+            onDownloadYAML: { resource in
+                Task {
+                    guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                    await viewModel.downloadResourceYAML(kind: .ingress, name: resource.name, namespace: resource.namespace, client: client)
+                }
             }
-        }
+        )
         .task { await loadData() }
-        .onChange(of: appState.selectedNamespace) { _, _ in
+        .onChange(of: appState.activeClusterID) { _, _ in
             Task { await loadData() }
         }
-        .confirmationDialog(
-            "Delete \(resourceToDelete?.name ?? "")?",
-            isPresented: $showDeleteConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) {
-                if let resource = resourceToDelete {
-                    Task {
-                        guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
-                        await viewModel.deleteResource(kind: .ingress, name: resource.name, namespace: resource.namespace, client: client)
-                    }
-                }
-                resourceToDelete = nil
-            }
-            Button("Cancel", role: .cancel) {
-                resourceToDelete = nil
-            }
-        } message: {
-            Text("This action cannot be undone.")
-        }
-        .alert("Delete Failed", isPresented: $viewModel.showDeleteError) {
-            Button("OK") {}
-        } message: {
-            Text(viewModel.deleteError ?? "Unknown error")
+        .onChange(of: appState.selectedNamespace) { _, _ in
+            Task { await loadData() }
         }
     }
 
@@ -118,28 +67,31 @@ struct IngressListView: View {
             networking.v1.Ingress.self,
             kind: .ingress,
             client: client,
-            namespace: appState.selectedNamespace
-        ) { resource in
-            let rules = resource.spec?.rules ?? []
-            let hosts = rules.compactMap { $0.host }.joined(separator: ", ")
-            let paths = rules.flatMap { rule in
-                (rule.http?.paths ?? []).map { $0.path ?? "/" }
-            }.joined(separator: ", ")
+            namespace: appState.selectedNamespace,
+            mapper: ingressToResourceItem
+        )
+    }
 
-            return ResourceItem(
-                id: "\(resource.metadata?.namespace ?? "")/\(resource.name ?? "")",
-                name: resource.name ?? "",
-                namespace: resource.metadata?.namespace,
-                status: "Active",
-                age: resource.metadata?.creationTimestamp,
-                labels: resource.metadata?.labels ?? [:],
-                annotations: resource.metadata?.annotations ?? [:],
-                kind: .ingress,
-                extraColumns: [
-                    "hosts": hosts,
-                    "paths": paths,
-                ]
-            )
-        }
+    private nonisolated func ingressToResourceItem(_ resource: networking.v1.Ingress) -> ResourceItem {
+        let rules = resource.spec?.rules ?? []
+        let hosts = rules.compactMap { $0.host }.joined(separator: ", ")
+        let paths = rules.flatMap { rule in
+            (rule.http?.paths ?? []).map { $0.path ?? "/" }
+        }.joined(separator: ", ")
+
+        return ResourceItem(
+            id: "\(resource.metadata?.namespace ?? "")/\(resource.name ?? "")",
+            name: resource.name ?? "",
+            namespace: resource.metadata?.namespace,
+            status: "Active",
+            age: resource.metadata?.creationTimestamp,
+            labels: resource.metadata?.labels ?? [:],
+            annotations: resource.metadata?.annotations ?? [:],
+            kind: .ingress,
+            extraColumns: [
+                "hosts": hosts,
+                "paths": paths,
+            ]
+        )
     }
 }

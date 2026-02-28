@@ -11,6 +11,7 @@ struct SidebarView: View {
     @State private var crdDefinitionsByGroup: [String: [CustomResourceDefinitionInfo]] = [:]
     @State private var crdCounts: [String: Int] = [:]
     @State private var isRefreshing = false
+    @State private var isManualRefreshInProgress = false
     @State private var refreshTask: Task<Void, Never>?
 
     private static let expandedSectionsDefaultsKey = "sidebar.expanded.sections.v2"
@@ -170,14 +171,14 @@ struct SidebarView: View {
 
             Spacer()
 
-            if isRefreshing {
+            if isManualRefreshInProgress {
                 ProgressView()
                     .controlSize(.small)
                     .tint(Theme.Colors.sidebarText)
             }
 
             Button {
-                Task { await refreshSidebarData() }
+                Task { await refreshSidebarData(showSpinner: true) }
             } label: {
                 Image(systemName: "arrow.clockwise")
                     .font(.system(size: 11, weight: .medium))
@@ -228,7 +229,7 @@ struct SidebarView: View {
                 }
                 .padding(.horizontal, Theme.Dimensions.smallSpacing)
                 .padding(.vertical, Theme.Dimensions.smallSpacing)
-                .background(Theme.Colors.sidebarExpandedHeaderBackground.opacity(0.72))
+                .background(Theme.Colors.sidebarExpandedHeaderBackground.opacity(0.60))
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
@@ -319,7 +320,7 @@ struct SidebarView: View {
                 .padding(.vertical, 6)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
-                    Color.white.opacity(0.04)
+                    Color.white.opacity(0.015)
                 )
                 .contentShape(Rectangle())
             }
@@ -375,7 +376,7 @@ struct SidebarView: View {
         refreshTask?.cancel()
         refreshTask = Task {
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 12_000_000_000)
+                try? await Task.sleep(nanoseconds: 15_000_000_000)
                 guard !Task.isCancelled else { break }
                 await refreshSidebarData()
             }
@@ -383,7 +384,18 @@ struct SidebarView: View {
     }
 
     @MainActor
-    private func refreshSidebarData() async {
+    private func refreshSidebarData(showSpinner: Bool = false) async {
+        guard !isRefreshing else { return }
+
+        if showSpinner {
+            isManualRefreshInProgress = true
+        }
+        defer {
+            if showSpinner {
+                isManualRefreshInProgress = false
+            }
+        }
+
         guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else {
             kindCounts = [:]
             crdDefinitionsByGroup = [:]

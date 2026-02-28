@@ -40,6 +40,7 @@ struct ResourceTableView: View {
     var onScale: ((ResourceItem, Int) -> Void)?
     var onRestart: ((ResourceItem) -> Void)?
     var onDownloadYAML: ((ResourceItem) -> Void)?
+    var deleteConfirmationMessageBuilder: ((ResourceItem) -> String)? = nil
     /// Optional custom cell renderer. Return a view for custom rendering, or nil for default.
     var customCellRenderer: ((ResourceTableColumn, ResourceItem) -> AnyView?)?
     /// Optional namespace grouping header renderer.
@@ -217,6 +218,10 @@ struct ResourceTableView: View {
     private var deleteConfirmationMessage: String {
         guard let resource = resourceToDelete else {
             return "This action cannot be undone."
+        }
+
+        if let deleteConfirmationMessageBuilder {
+            return deleteConfirmationMessageBuilder(resource)
         }
 
         let namespace = resource.namespace ?? "cluster-scoped"
@@ -556,18 +561,20 @@ struct ResourceTableView: View {
         }
         .padding(.horizontal, Theme.Dimensions.padding)
         .frame(height: Theme.Dimensions.tableRowHeight)
-        .background(isSelected ? Theme.Colors.accent.opacity(0.1) : .clear)
+        .background(isSelected ? Theme.Colors.tableSelectionBackground : .clear)
         .contentShape(Rectangle())
-        .onTapGesture {
-            if appState.selectedResourceID == resource.id {
-                appState.selectResource(nil)
-            } else {
-                appState.selectResource(resource.id)
-            }
-        }
-        .onTapGesture(count: 2) {
-            appState.showResourceDetail(resource.id)
-        }
+        .highPriorityGesture(
+            TapGesture(count: 2)
+                .onEnded {
+                    appState.showResourceDetail(resource.id)
+                }
+        )
+        .simultaneousGesture(
+            TapGesture()
+                .onEnded {
+                    appState.selectResource(resource.id)
+                }
+        )
         .contextMenu {
             Button {
                 appState.showResourceDetail(resource.id)

@@ -116,6 +116,39 @@ final class ResourceDetailViewModel {
         isLoading = false
     }
 
+    func loadCustomResourceDetail(
+        definition: CustomResourceDefinitionInfo,
+        name: String,
+        namespace: String?,
+        context: String?
+    ) async {
+        isLoading = true
+        errorMessage = nil
+        metadata = [:]
+        labels = [:]
+        annotations = [:]
+        events = []
+
+        do {
+            resourceYAML = try await kubernetesService.getCustomResourceYAML(
+                definition: definition,
+                name: name,
+                namespace: namespace,
+                context: context
+            )
+
+            extractCustomResourceMetadata(from: resourceYAML, fallbackName: name, fallbackNamespace: namespace, definition: definition)
+
+            if definition.isNamespaced, let namespace {
+                await loadEvents(forResource: name, namespace: namespace)
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+
+        isLoading = false
+    }
+
     // MARK: - Apply YAML
 
     func applyYAML(_ yaml: String, namespace: String?) async {
@@ -176,6 +209,56 @@ final class ResourceDetailViewModel {
             labels = meta.labels ?? [:]
             annotations = meta.annotations ?? [:]
         }
+    }
+
+    private func extractCustomResourceMetadata(
+        from yaml: String,
+        fallbackName: String,
+        fallbackNamespace: String?,
+        definition: CustomResourceDefinitionInfo
+    ) {
+        metadata = [:]
+        labels = [:]
+        annotations = [:]
+
+        metadata["name"] = fallbackName
+        metadata["namespace"] = fallbackNamespace ?? ""
+        metadata["kind"] = definition.kind
+        metadata["apiVersion"] = "\(definition.group)/\(definition.version)"
+
+        guard let loaded = try? Yams.load(yaml: yaml),
+              let object = loaded as? [String: Any] else {
+            return
+        }
+
+        if let apiVersion = object["apiVersion"] as? String {
+            metadata["apiVersion"] = apiVersion
+        }
+        if let kind = object["kind"] as? String {
+            metadata["kind"] = kind
+        }
+
+        guard let metadataNode = object["metadata"] as? [String: Any] else {
+            return
+        }
+
+        if let name = metadataNode["name"] as? String {
+            metadata["name"] = name
+        }
+        if let namespace = metadataNode["namespace"] as? String {
+            metadata["namespace"] = namespace
+        }
+        if let uid = metadataNode["uid"] as? String {
+            metadata["uid"] = uid
+        }
+        if let resourceVersion = metadataNode["resourceVersion"] as? String {
+            metadata["resourceVersion"] = resourceVersion
+        }
+        if let creationTimestamp = metadataNode["creationTimestamp"] as? String {
+            metadata["creationTimestamp"] = creationTimestamp
+        }
+        labels = metadataNode["labels"] as? [String: String] ?? [:]
+        annotations = metadataNode["annotations"] as? [String: String] ?? [:]
     }
 
     // MARK: - YAML Cleanup

@@ -6,114 +6,57 @@ struct PVListView: View {
     @Environment(AppState.self) private var appState
     @Environment(ClusterViewModel.self) private var clusterViewModel
     @State private var viewModel = ResourceListViewModel()
-    @State private var resourceToDelete: ResourceItem?
-    @State private var showDeleteConfirmation = false
+
+    private let columns: [ResourceTableColumn] = [
+        ResourceTableColumn(title: "Name", key: "name", sortField: .name),
+        ResourceTableColumn(title: "Capacity", key: "capacity", width: 110),
+        ResourceTableColumn(title: "Access Modes", key: "accessModes", width: 170),
+        ResourceTableColumn(title: "Reclaim Policy", key: "reclaimPolicy", width: 150),
+        ResourceTableColumn(title: "Status", key: "status", width: 110, sortField: .status),
+        ResourceTableColumn(title: "Claim", key: "claim", width: 220),
+        ResourceTableColumn(title: "Age", key: "age", width: 70, sortField: .age),
+    ]
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Header with icon, title, search
-            HStack {
-                Image(systemName: ResourceKind.persistentVolume.icon)
-                    .foregroundStyle(Theme.Colors.accent)
-                Text(ResourceKind.persistentVolume.pluralName)
-                    .font(Theme.Fonts.title)
-                Spacer()
-                TextField("Search...", text: $viewModel.searchText)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 200)
-            }
-            .padding(.horizontal, Theme.Dimensions.padding)
-            .padding(.top, Theme.Dimensions.padding)
-
-            Divider()
-
-            if viewModel.isLoading {
-                ProgressView()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if viewModel.filteredResources.isEmpty {
-                EmptyStateView(
-                    icon: "internaldrive",
-                    title: "No Persistent Volumes",
-                    message: "No persistent volumes found in the cluster."
-                )
-            } else {
-                Table(viewModel.filteredResources, selection: Binding(
-                    get: { appState.selectedResourceID },
-                    set: { appState.selectResource($0) }
-                )) {
-                    TableColumn("Name") { item in
-                        Text(item.name)
-                            .font(Theme.Fonts.tableCell)
-                            .contextMenu {
-                                Button(role: .destructive) {
-                                    resourceToDelete = item
-                                    showDeleteConfirmation = true
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
-                                }
-                            }
-                    }
-                    TableColumn("Capacity") { item in
-                        Text(item.extraColumns["capacity"] ?? "")
-                            .font(Theme.Fonts.tableCell)
-                            .foregroundStyle(Theme.Colors.secondaryText)
-                    }
-                    TableColumn("Access Modes") { item in
-                        Text(item.extraColumns["accessModes"] ?? "")
-                            .font(Theme.Fonts.tableCell)
-                            .foregroundStyle(Theme.Colors.secondaryText)
-                    }
-                    TableColumn("Reclaim Policy") { item in
-                        Text(item.extraColumns["reclaimPolicy"] ?? "")
-                            .font(Theme.Fonts.tableCell)
-                            .foregroundStyle(Theme.Colors.secondaryText)
-                    }
-                    TableColumn("Status") { item in
-                        StatusBadge(status: item.status)
-                    }
-                    TableColumn("Claim") { item in
-                        Text(item.extraColumns["claim"] ?? "")
-                            .font(Theme.Fonts.tableCell)
-                            .foregroundStyle(Theme.Colors.secondaryText)
-                    }
-                    TableColumn("Age") { item in
-                        if let date = item.age {
-                            AgeLabel(date: date)
-                        } else {
-                            Text("-")
-                                .font(Theme.Fonts.tableCell)
-                                .foregroundStyle(Theme.Colors.tertiaryText)
-                        }
+        ResourceTableView(
+            columns: columns,
+            viewModel: viewModel,
+            onViewYAML: { resource in
+                Task {
+                    guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                    do {
+                        let yaml = try await viewModel.fetchResourceYAML(
+                            kind: .persistentVolume,
+                            name: resource.name,
+                            namespace: resource.namespace,
+                            client: client
+                        )
+                        appState.showYAMLEditor(resourceID: resource.id, title: "YAML - \(resource.name)", yaml: yaml)
+                    } catch {
+                        appState.showYAMLEditor(
+                            resourceID: resource.id,
+                            title: "YAML - \(resource.name)",
+                            yaml: "# Error loading YAML: \(error.localizedDescription)"
+                        )
                     }
                 }
-                .font(Theme.Fonts.tableCell)
+            },
+            onDelete: { resource in
+                Task {
+                    guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                    await viewModel.deleteResource(kind: .persistentVolume, name: resource.name, namespace: resource.namespace, client: client)
+                }
+            },
+            onDownloadYAML: { resource in
+                Task {
+                    guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                    await viewModel.downloadResourceYAML(kind: .persistentVolume, name: resource.name, namespace: resource.namespace, client: client)
+                }
             }
-        }
+        )
         .task { await loadData() }
-        .confirmationDialog(
-            "Delete \(resourceToDelete?.name ?? "")?",
-            isPresented: $showDeleteConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) {
-                if let resource = resourceToDelete {
-                    Task {
-                        guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
-                        await viewModel.deleteResource(kind: .persistentVolume, name: resource.name, namespace: resource.namespace, client: client)
-                    }
-                }
-                resourceToDelete = nil
-            }
-            Button("Cancel", role: .cancel) {
-                resourceToDelete = nil
-            }
-        } message: {
-            Text("This action cannot be undone.")
-        }
-        .alert("Delete Failed", isPresented: $viewModel.showDeleteError) {
-            Button("OK") {}
-        } message: {
-            Text(viewModel.deleteError ?? "Unknown error")
+        .onChange(of: appState.activeClusterID) { _, _ in
+            Task { await loadData() }
         }
     }
 
@@ -124,19 +67,15 @@ struct PVListView: View {
             kind: .persistentVolume,
             client: client
         ) { resource in
-            let capacity: String
-            if let qty = resource.spec?.capacity?["storage"] {
-                capacity = qty.description
-            } else {
-                capacity = ""
-            }
+            let capacity = resource.spec?.capacity?["storage"]?.description ?? ""
             let accessModes = (resource.spec?.accessModes ?? []).joined(separator: ", ")
             let reclaimPolicy = resource.spec?.persistentVolumeReclaimPolicy ?? ""
             let phase = resource.status?.phase ?? "Unknown"
-            let claimRef = resource.spec?.claimRef
             let claim: String
-            if let ns = claimRef?.namespace, let name = claimRef?.name {
-                claim = "\(ns)/\(name)"
+            if let claimRef = resource.spec?.claimRef,
+               let namespace = claimRef.namespace,
+               let name = claimRef.name {
+                claim = "\(namespace)/\(name)"
             } else {
                 claim = ""
             }

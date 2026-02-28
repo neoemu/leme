@@ -6,117 +6,60 @@ struct PVCListView: View {
     @Environment(AppState.self) private var appState
     @Environment(ClusterViewModel.self) private var clusterViewModel
     @State private var viewModel = ResourceListViewModel()
-    @State private var resourceToDelete: ResourceItem?
-    @State private var showDeleteConfirmation = false
+
+    private let columns: [ResourceTableColumn] = [
+        ResourceTableColumn(title: "Name", key: "name", sortField: .name),
+        ResourceTableColumn(title: "Namespace", key: "namespace", width: 130, sortField: .namespace),
+        ResourceTableColumn(title: "Status", key: "status", width: 100, sortField: .status),
+        ResourceTableColumn(title: "Volume", key: "volume", width: 180),
+        ResourceTableColumn(title: "Capacity", key: "capacity", width: 100),
+        ResourceTableColumn(title: "Storage Class", key: "storageClass", width: 160),
+        ResourceTableColumn(title: "Age", key: "age", width: 70, sortField: .age),
+    ]
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Header with icon, title, search
-            HStack {
-                Image(systemName: ResourceKind.persistentVolumeClaim.icon)
-                    .foregroundStyle(Theme.Colors.accent)
-                Text(ResourceKind.persistentVolumeClaim.pluralName)
-                    .font(Theme.Fonts.title)
-                Spacer()
-                TextField("Search...", text: $viewModel.searchText)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 200)
-            }
-            .padding(.horizontal, Theme.Dimensions.padding)
-            .padding(.top, Theme.Dimensions.padding)
-
-            Divider()
-
-            if viewModel.isLoading {
-                ProgressView()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if viewModel.filteredResources.isEmpty {
-                EmptyStateView(
-                    icon: "externaldrive",
-                    title: "No Persistent Volume Claims",
-                    message: "No PVCs found in the current namespace."
-                )
-            } else {
-                Table(viewModel.filteredResources, selection: Binding(
-                    get: { appState.selectedResourceID },
-                    set: { appState.selectResource($0) }
-                )) {
-                    TableColumn("Name") { item in
-                        Text(item.name)
-                            .font(Theme.Fonts.tableCell)
-                            .contextMenu {
-                                Button(role: .destructive) {
-                                    resourceToDelete = item
-                                    showDeleteConfirmation = true
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
-                                }
-                            }
-                    }
-                    TableColumn("Namespace") { item in
-                        Text(item.namespace ?? "")
-                            .font(Theme.Fonts.tableCell)
-                            .foregroundStyle(Theme.Colors.secondaryText)
-                    }
-                    TableColumn("Status") { item in
-                        StatusBadge(status: item.status)
-                    }
-                    TableColumn("Volume") { item in
-                        Text(item.extraColumns["volume"] ?? "")
-                            .font(Theme.Fonts.tableCell)
-                            .foregroundStyle(Theme.Colors.secondaryText)
-                    }
-                    TableColumn("Capacity") { item in
-                        Text(item.extraColumns["capacity"] ?? "")
-                            .font(Theme.Fonts.tableCell)
-                            .foregroundStyle(Theme.Colors.secondaryText)
-                    }
-                    TableColumn("Storage Class") { item in
-                        Text(item.extraColumns["storageClass"] ?? "")
-                            .font(Theme.Fonts.tableCell)
-                            .foregroundStyle(Theme.Colors.secondaryText)
-                    }
-                    TableColumn("Age") { item in
-                        if let date = item.age {
-                            AgeLabel(date: date)
-                        } else {
-                            Text("-")
-                                .font(Theme.Fonts.tableCell)
-                                .foregroundStyle(Theme.Colors.tertiaryText)
-                        }
+        ResourceTableView(
+            columns: columns,
+            viewModel: viewModel,
+            onViewYAML: { resource in
+                Task {
+                    guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                    do {
+                        let yaml = try await viewModel.fetchResourceYAML(
+                            kind: .persistentVolumeClaim,
+                            name: resource.name,
+                            namespace: resource.namespace,
+                            client: client
+                        )
+                        appState.showYAMLEditor(resourceID: resource.id, title: "YAML - \(resource.name)", yaml: yaml)
+                    } catch {
+                        appState.showYAMLEditor(
+                            resourceID: resource.id,
+                            title: "YAML - \(resource.name)",
+                            yaml: "# Error loading YAML: \(error.localizedDescription)"
+                        )
                     }
                 }
-                .font(Theme.Fonts.tableCell)
+            },
+            onDelete: { resource in
+                Task {
+                    guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                    await viewModel.deleteResource(kind: .persistentVolumeClaim, name: resource.name, namespace: resource.namespace, client: client)
+                }
+            },
+            onDownloadYAML: { resource in
+                Task {
+                    guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                    await viewModel.downloadResourceYAML(kind: .persistentVolumeClaim, name: resource.name, namespace: resource.namespace, client: client)
+                }
             }
-        }
+        )
         .task { await loadData() }
-        .onChange(of: appState.selectedNamespace) { _, _ in
+        .onChange(of: appState.activeClusterID) { _, _ in
             Task { await loadData() }
         }
-        .confirmationDialog(
-            "Delete \(resourceToDelete?.name ?? "")?",
-            isPresented: $showDeleteConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) {
-                if let resource = resourceToDelete {
-                    Task {
-                        guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
-                        await viewModel.deleteResource(kind: .persistentVolumeClaim, name: resource.name, namespace: resource.namespace, client: client)
-                    }
-                }
-                resourceToDelete = nil
-            }
-            Button("Cancel", role: .cancel) {
-                resourceToDelete = nil
-            }
-        } message: {
-            Text("This action cannot be undone.")
-        }
-        .alert("Delete Failed", isPresented: $viewModel.showDeleteError) {
-            Button("OK") {}
-        } message: {
-            Text(viewModel.deleteError ?? "Unknown error")
+        .onChange(of: appState.selectedNamespace) { _, _ in
+            Task { await loadData() }
         }
     }
 
@@ -126,33 +69,36 @@ struct PVCListView: View {
             core.v1.PersistentVolumeClaim.self,
             kind: .persistentVolumeClaim,
             client: client,
-            namespace: appState.selectedNamespace
-        ) { resource in
-            let phase = resource.status?.phase ?? "Unknown"
-            let volume = resource.spec?.volumeName ?? ""
-            let capacity: String
-            if let qty = resource.status?.capacity?["storage"] {
-                capacity = qty.description
-            } else {
-                capacity = ""
-            }
-            let storageClass = resource.spec?.storageClassName ?? ""
+            namespace: appState.selectedNamespace,
+            mapper: pvcToResourceItem
+        )
+    }
 
-            return ResourceItem(
-                id: "\(resource.metadata?.namespace ?? "")/\(resource.name ?? "")",
-                name: resource.name ?? "",
-                namespace: resource.metadata?.namespace,
-                status: phase,
-                age: resource.metadata?.creationTimestamp,
-                labels: resource.metadata?.labels ?? [:],
-                annotations: resource.metadata?.annotations ?? [:],
-                kind: .persistentVolumeClaim,
-                extraColumns: [
-                    "volume": volume,
-                    "capacity": capacity,
-                    "storageClass": storageClass,
-                ]
-            )
+    private nonisolated func pvcToResourceItem(_ resource: core.v1.PersistentVolumeClaim) -> ResourceItem {
+        let phase = resource.status?.phase ?? "Unknown"
+        let volume = resource.spec?.volumeName ?? ""
+        let capacity: String
+        if let qty = resource.status?.capacity?["storage"] {
+            capacity = qty.description
+        } else {
+            capacity = ""
         }
+        let storageClass = resource.spec?.storageClassName ?? ""
+
+        return ResourceItem(
+            id: "\(resource.metadata?.namespace ?? "")/\(resource.name ?? "")",
+            name: resource.name ?? "",
+            namespace: resource.metadata?.namespace,
+            status: phase,
+            age: resource.metadata?.creationTimestamp,
+            labels: resource.metadata?.labels ?? [:],
+            annotations: resource.metadata?.annotations ?? [:],
+            kind: .persistentVolumeClaim,
+            extraColumns: [
+                "volume": volume,
+                "capacity": capacity,
+                "storageClass": storageClass,
+            ]
+        )
     }
 }

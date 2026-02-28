@@ -6,112 +6,58 @@ struct NetworkPolicyListView: View {
     @Environment(AppState.self) private var appState
     @Environment(ClusterViewModel.self) private var clusterViewModel
     @State private var viewModel = ResourceListViewModel()
-    @State private var resourceToDelete: ResourceItem?
-    @State private var showDeleteConfirmation = false
+
+    private let columns: [ResourceTableColumn] = [
+        ResourceTableColumn(title: "Name", key: "name", sortField: .name),
+        ResourceTableColumn(title: "Namespace", key: "namespace", width: 130, sortField: .namespace),
+        ResourceTableColumn(title: "Pod Selector", key: "podSelector", width: 180),
+        ResourceTableColumn(title: "Policy Types", key: "policyTypes", width: 140),
+        ResourceTableColumn(title: "Age", key: "age", width: 70, sortField: .age),
+    ]
 
     var body: some View {
-        VStack(spacing: 0) {
-            if viewModel.isLoading && viewModel.resources.isEmpty {
-                ProgressView("Loading network policies...")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let errorMessage = viewModel.errorMessage {
-                EmptyStateView(
-                    icon: "exclamationmark.triangle",
-                    title: "Error Loading Network Policies",
-                    message: errorMessage
-                )
-            } else if viewModel.filteredResources.isEmpty {
-                EmptyStateView(
-                    icon: ResourceKind.networkPolicy.icon,
-                    title: "No Network Policies",
-                    message: "No network policies found in the selected namespace."
-                )
-            } else {
-                networkPolicyTable
+        ResourceTableView(
+            columns: columns,
+            viewModel: viewModel,
+            onViewYAML: { resource in
+                Task {
+                    guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                    do {
+                        let yaml = try await viewModel.fetchResourceYAML(
+                            kind: .networkPolicy,
+                            name: resource.name,
+                            namespace: resource.namespace,
+                            client: client
+                        )
+                        appState.showYAMLEditor(resourceID: resource.id, title: "YAML - \(resource.name)", yaml: yaml)
+                    } catch {
+                        appState.showYAMLEditor(
+                            resourceID: resource.id,
+                            title: "YAML - \(resource.name)",
+                            yaml: "# Error loading YAML: \(error.localizedDescription)"
+                        )
+                    }
+                }
+            },
+            onDelete: { resource in
+                Task {
+                    guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                    await viewModel.deleteResource(kind: .networkPolicy, name: resource.name, namespace: resource.namespace, client: client)
+                }
+            },
+            onDownloadYAML: { resource in
+                Task {
+                    guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                    await viewModel.downloadResourceYAML(kind: .networkPolicy, name: resource.name, namespace: resource.namespace, client: client)
+                }
             }
-        }
+        )
         .task { await loadData() }
-        .onChange(of: appState.selectedNamespace) { _, _ in
+        .onChange(of: appState.activeClusterID) { _, _ in
             Task { await loadData() }
         }
-        .confirmationDialog(
-            "Delete \(resourceToDelete?.name ?? "")?",
-            isPresented: $showDeleteConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) {
-                if let resource = resourceToDelete {
-                    Task {
-                        guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
-                        await viewModel.deleteResource(kind: .networkPolicy, name: resource.name, namespace: resource.namespace, client: client)
-                    }
-                }
-                resourceToDelete = nil
-            }
-            Button("Cancel", role: .cancel) {
-                resourceToDelete = nil
-            }
-        } message: {
-            Text("This action cannot be undone.")
-        }
-        .alert("Delete Failed", isPresented: $viewModel.showDeleteError) {
-            Button("OK") {}
-        } message: {
-            Text(viewModel.deleteError ?? "Unknown error")
-        }
-    }
-
-    private var networkPolicyTable: some View {
-        Table(viewModel.filteredResources, selection: $viewModel.selectedResourceID) {
-            TableColumn("Name") { item in
-                Text(item.name)
-                    .font(Theme.Fonts.monoSmall)
-                    .contextMenu {
-                        Button(role: .destructive) {
-                            resourceToDelete = item
-                            showDeleteConfirmation = true
-                        } label: {
-                            Label("Delete", systemImage: "trash")
-                        }
-                    }
-            }
-            .width(min: 120, ideal: 200)
-
-            TableColumn("Namespace") { item in
-                Text(item.namespace ?? "-")
-                    .font(Theme.Fonts.tableCell)
-                    .foregroundStyle(Theme.Colors.secondaryText)
-            }
-            .width(min: 80, ideal: 120)
-
-            TableColumn("Pod Selector") { item in
-                Text(item.extraColumns["podSelector"] ?? "<all>")
-                    .font(Theme.Fonts.monoSmall)
-                    .foregroundStyle(Theme.Colors.secondaryText)
-            }
-            .width(min: 100, ideal: 160)
-
-            TableColumn("Policy Types") { item in
-                Text(item.extraColumns["policyTypes"] ?? "-")
-                    .font(Theme.Fonts.tableCell)
-                    .foregroundStyle(Theme.Colors.secondaryText)
-            }
-            .width(min: 80, ideal: 120)
-
-            TableColumn("Age") { item in
-                if let age = item.age {
-                    AgeLabel(date: age)
-                } else {
-                    Text("-")
-                        .font(Theme.Fonts.monoSmall)
-                        .foregroundStyle(Theme.Colors.tertiaryText)
-                }
-            }
-            .width(min: 40, ideal: 60)
-        }
-        .tableStyle(.inset(alternatesRowBackgrounds: true))
-        .onChange(of: viewModel.selectedResourceID) { _, newValue in
-            appState.selectResource(newValue)
+        .onChange(of: appState.selectedNamespace) { _, _ in
+            Task { await loadData() }
         }
     }
 

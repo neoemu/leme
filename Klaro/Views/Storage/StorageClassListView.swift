@@ -6,97 +6,55 @@ struct StorageClassListView: View {
     @Environment(AppState.self) private var appState
     @Environment(ClusterViewModel.self) private var clusterViewModel
     @State private var viewModel = ResourceListViewModel()
-    @State private var resourceToDelete: ResourceItem?
-    @State private var showDeleteConfirmation = false
+
+    private let columns: [ResourceTableColumn] = [
+        ResourceTableColumn(title: "Name", key: "name", sortField: .name),
+        ResourceTableColumn(title: "Provisioner", key: "provisioner", width: 240),
+        ResourceTableColumn(title: "Reclaim Policy", key: "reclaimPolicy", width: 150),
+        ResourceTableColumn(title: "Default", key: "default", width: 90),
+        ResourceTableColumn(title: "Age", key: "age", width: 70, sortField: .age),
+    ]
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Header with icon, title, search
-            HStack {
-                Image(systemName: ResourceKind.storageClass.icon)
-                    .foregroundStyle(Theme.Colors.accent)
-                Text(ResourceKind.storageClass.pluralName)
-                    .font(Theme.Fonts.title)
-                Spacer()
-                TextField("Search...", text: $viewModel.searchText)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 200)
-            }
-            .padding(.horizontal, Theme.Dimensions.padding)
-            .padding(.top, Theme.Dimensions.padding)
-
-            Divider()
-
-            if viewModel.isLoading {
-                ProgressView()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if viewModel.filteredResources.isEmpty {
-                EmptyStateView(
-                    icon: "cylinder",
-                    title: "No Storage Classes",
-                    message: "No storage classes found in the cluster."
-                )
-            } else {
-                Table(viewModel.filteredResources, selection: Binding(
-                    get: { appState.selectedResourceID },
-                    set: { appState.selectResource($0) }
-                )) {
-                    TableColumn("Name") { item in
-                        Text(item.name)
-                            .font(Theme.Fonts.tableCell)
-                            .contextMenu {
-                                Button(role: .destructive) {
-                                    resourceToDelete = item
-                                    showDeleteConfirmation = true
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
-                                }
-                            }
-                    }
-                    TableColumn("Provisioner") { item in
-                        Text(item.extraColumns["provisioner"] ?? "")
-                            .font(Theme.Fonts.tableCell)
-                            .foregroundStyle(Theme.Colors.secondaryText)
-                    }
-                    TableColumn("Reclaim Policy") { item in
-                        Text(item.extraColumns["reclaimPolicy"] ?? "")
-                            .font(Theme.Fonts.tableCell)
-                            .foregroundStyle(Theme.Colors.secondaryText)
-                    }
-                    TableColumn("Default") { item in
-                        Text(item.extraColumns["default"] ?? "No")
-                            .font(Theme.Fonts.tableCell)
-                            .foregroundStyle(Theme.Colors.secondaryText)
+        ResourceTableView(
+            columns: columns,
+            viewModel: viewModel,
+            onViewYAML: { resource in
+                Task {
+                    guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                    do {
+                        let yaml = try await viewModel.fetchResourceYAML(
+                            kind: .storageClass,
+                            name: resource.name,
+                            namespace: resource.namespace,
+                            client: client
+                        )
+                        appState.showYAMLEditor(resourceID: resource.id, title: "YAML - \(resource.name)", yaml: yaml)
+                    } catch {
+                        appState.showYAMLEditor(
+                            resourceID: resource.id,
+                            title: "YAML - \(resource.name)",
+                            yaml: "# Error loading YAML: \(error.localizedDescription)"
+                        )
                     }
                 }
-                .font(Theme.Fonts.tableCell)
+            },
+            onDelete: { resource in
+                Task {
+                    guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                    await viewModel.deleteResource(kind: .storageClass, name: resource.name, namespace: resource.namespace, client: client)
+                }
+            },
+            onDownloadYAML: { resource in
+                Task {
+                    guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                    await viewModel.downloadResourceYAML(kind: .storageClass, name: resource.name, namespace: resource.namespace, client: client)
+                }
             }
-        }
+        )
         .task { await loadData() }
-        .confirmationDialog(
-            "Delete \(resourceToDelete?.name ?? "")?",
-            isPresented: $showDeleteConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) {
-                if let resource = resourceToDelete {
-                    Task {
-                        guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
-                        await viewModel.deleteResource(kind: .storageClass, name: resource.name, namespace: resource.namespace, client: client)
-                    }
-                }
-                resourceToDelete = nil
-            }
-            Button("Cancel", role: .cancel) {
-                resourceToDelete = nil
-            }
-        } message: {
-            Text("This action cannot be undone.")
-        }
-        .alert("Delete Failed", isPresented: $viewModel.showDeleteError) {
-            Button("OK") {}
-        } message: {
-            Text(viewModel.deleteError ?? "Unknown error")
+        .onChange(of: appState.activeClusterID) { _, _ in
+            Task { await loadData() }
         }
     }
 
@@ -107,8 +65,6 @@ struct StorageClassListView: View {
             kind: .storageClass,
             client: client
         ) { resource in
-            let provisioner = resource.provisioner
-            let reclaimPolicy = resource.reclaimPolicy ?? ""
             let annotations = resource.metadata?.annotations ?? [:]
             let isDefault = annotations["storageclass.kubernetes.io/is-default-class"] == "true"
 
@@ -122,8 +78,8 @@ struct StorageClassListView: View {
                 annotations: annotations,
                 kind: .storageClass,
                 extraColumns: [
-                    "provisioner": provisioner,
-                    "reclaimPolicy": reclaimPolicy,
+                    "provisioner": resource.provisioner,
+                    "reclaimPolicy": resource.reclaimPolicy ?? "",
                     "default": isDefault ? "Yes" : "No",
                 ]
             )

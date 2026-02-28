@@ -6,104 +6,57 @@ struct EndpointListView: View {
     @Environment(AppState.self) private var appState
     @Environment(ClusterViewModel.self) private var clusterViewModel
     @State private var viewModel = ResourceListViewModel()
-    @State private var resourceToDelete: ResourceItem?
-    @State private var showDeleteConfirmation = false
+
+    private let columns: [ResourceTableColumn] = [
+        ResourceTableColumn(title: "Name", key: "name", sortField: .name),
+        ResourceTableColumn(title: "Namespace", key: "namespace", width: 140, sortField: .namespace),
+        ResourceTableColumn(title: "Endpoints", key: "endpoints", width: 100),
+        ResourceTableColumn(title: "Age", key: "age", width: 70, sortField: .age),
+    ]
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Header with icon, title, search
-            HStack {
-                Image(systemName: ResourceKind.endpoint.icon)
-                    .foregroundStyle(Theme.Colors.accent)
-                Text(ResourceKind.endpoint.pluralName)
-                    .font(Theme.Fonts.title)
-                Spacer()
-                TextField("Search...", text: $viewModel.searchText)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 200)
-            }
-            .padding(.horizontal, Theme.Dimensions.padding)
-            .padding(.top, Theme.Dimensions.padding)
-
-            Divider()
-
-            if viewModel.isLoading {
-                ProgressView()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if viewModel.filteredResources.isEmpty {
-                EmptyStateView(
-                    icon: "point.3.connected.trianglepath.dotted",
-                    title: "No Endpoints",
-                    message: "No endpoints found in the current namespace."
-                )
-            } else {
-                Table(viewModel.filteredResources, selection: Binding(
-                    get: { appState.selectedResourceID },
-                    set: { appState.selectResource($0) }
-                )) {
-                    TableColumn("Name") { item in
-                        Text(item.name)
-                            .font(Theme.Fonts.tableCell)
-                            .contextMenu {
-                                Button(role: .destructive) {
-                                    resourceToDelete = item
-                                    showDeleteConfirmation = true
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
-                                }
-                            }
-                    }
-                    TableColumn("Namespace") { item in
-                        Text(item.namespace ?? "")
-                            .font(Theme.Fonts.tableCell)
-                            .foregroundStyle(Theme.Colors.secondaryText)
-                    }
-                    TableColumn("Endpoints") { item in
-                        Text(item.extraColumns["endpoints"] ?? "0")
-                            .font(Theme.Fonts.tableCell)
-                            .foregroundStyle(Theme.Colors.secondaryText)
-                    }
-                    TableColumn("Age") { item in
-                        if let date = item.age {
-                            AgeLabel(date: date)
-                        } else {
-                            Text("-")
-                                .font(Theme.Fonts.tableCell)
-                                .foregroundStyle(Theme.Colors.tertiaryText)
-                        }
+        ResourceTableView(
+            columns: columns,
+            viewModel: viewModel,
+            onViewYAML: { resource in
+                Task {
+                    guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                    do {
+                        let yaml = try await viewModel.fetchResourceYAML(
+                            kind: .endpoint,
+                            name: resource.name,
+                            namespace: resource.namespace,
+                            client: client
+                        )
+                        appState.showYAMLEditor(resourceID: resource.id, title: "YAML - \(resource.name)", yaml: yaml)
+                    } catch {
+                        appState.showYAMLEditor(
+                            resourceID: resource.id,
+                            title: "YAML - \(resource.name)",
+                            yaml: "# Error loading YAML: \(error.localizedDescription)"
+                        )
                     }
                 }
-                .font(Theme.Fonts.tableCell)
+            },
+            onDelete: { resource in
+                Task {
+                    guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                    await viewModel.deleteResource(kind: .endpoint, name: resource.name, namespace: resource.namespace, client: client)
+                }
+            },
+            onDownloadYAML: { resource in
+                Task {
+                    guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                    await viewModel.downloadResourceYAML(kind: .endpoint, name: resource.name, namespace: resource.namespace, client: client)
+                }
             }
-        }
+        )
         .task { await loadData() }
-        .onChange(of: appState.selectedNamespace) { _, _ in
+        .onChange(of: appState.activeClusterID) { _, _ in
             Task { await loadData() }
         }
-        .confirmationDialog(
-            "Delete \(resourceToDelete?.name ?? "")?",
-            isPresented: $showDeleteConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) {
-                if let resource = resourceToDelete {
-                    Task {
-                        guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
-                        await viewModel.deleteResource(kind: .endpoint, name: resource.name, namespace: resource.namespace, client: client)
-                    }
-                }
-                resourceToDelete = nil
-            }
-            Button("Cancel", role: .cancel) {
-                resourceToDelete = nil
-            }
-        } message: {
-            Text("This action cannot be undone.")
-        }
-        .alert("Delete Failed", isPresented: $viewModel.showDeleteError) {
-            Button("OK") {}
-        } message: {
-            Text(viewModel.deleteError ?? "Unknown error")
+        .onChange(of: appState.selectedNamespace) { _, _ in
+            Task { await loadData() }
         }
     }
 
@@ -113,24 +66,27 @@ struct EndpointListView: View {
             core.v1.Endpoints.self,
             kind: .endpoint,
             client: client,
-            namespace: appState.selectedNamespace
-        ) { resource in
-            let subsets = resource.subsets ?? []
-            let endpointCount = subsets.reduce(0) { $0 + ($1.addresses?.count ?? 0) }
+            namespace: appState.selectedNamespace,
+            mapper: endpointToResourceItem
+        )
+    }
 
-            return ResourceItem(
-                id: "\(resource.metadata?.namespace ?? "")/\(resource.name ?? "")",
-                name: resource.name ?? "",
-                namespace: resource.metadata?.namespace,
-                status: endpointCount > 0 ? "Active" : "None",
-                age: resource.metadata?.creationTimestamp,
-                labels: resource.metadata?.labels ?? [:],
-                annotations: resource.metadata?.annotations ?? [:],
-                kind: .endpoint,
-                extraColumns: [
-                    "endpoints": "\(endpointCount)",
-                ]
-            )
-        }
+    private nonisolated func endpointToResourceItem(_ resource: core.v1.Endpoints) -> ResourceItem {
+        let subsets = resource.subsets ?? []
+        let endpointCount = subsets.reduce(0) { $0 + ($1.addresses?.count ?? 0) }
+
+        return ResourceItem(
+            id: "\(resource.metadata?.namespace ?? "")/\(resource.name ?? "")",
+            name: resource.name ?? "",
+            namespace: resource.metadata?.namespace,
+            status: endpointCount > 0 ? "Active" : "None",
+            age: resource.metadata?.creationTimestamp,
+            labels: resource.metadata?.labels ?? [:],
+            annotations: resource.metadata?.annotations ?? [:],
+            kind: .endpoint,
+            extraColumns: [
+                "endpoints": "\(endpointCount)",
+            ]
+        )
     }
 }

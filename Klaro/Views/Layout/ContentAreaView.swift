@@ -21,6 +21,7 @@ struct ContentAreaView: View {
                     .animation(Theme.Animations.contentTransition, value: appState.selectedResourceKind)
             case .customResource(let target):
                 SelectedCustomResourceListView(target: target)
+                    .id(target.id)
                     .transition(.opacity)
             case .placeholder(let page):
                 SidebarPlaceholderView(page: page)
@@ -379,25 +380,14 @@ private struct SelectedCustomResourceListView: View {
 
     let target: CustomResourceNavigationTarget
 
-    @State private var resources: [CustomResourceItem] = []
-    @State private var selectedResourceID: String?
-    @State private var searchText = ""
-    @State private var isLoading = false
-    @State private var errorMessage: String?
-    @State private var resourceToDelete: CustomResourceItem?
-    @State private var showDeleteConfirmation = false
-    @State private var operationMessage: String?
-    @State private var operationIsError = false
+    @State private var viewModel = ResourceListViewModel()
 
-    private var filteredResources: [CustomResourceItem] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !query.isEmpty else { return resources }
-        return resources.filter { item in
-            item.name.lowercased().contains(query)
-                || (item.namespace?.lowercased().contains(query) ?? false)
-                || item.status.lowercased().contains(query)
-        }
-    }
+    private let columns: [ResourceTableColumn] = [
+        ResourceTableColumn(title: "Name", key: "name", sortField: .name),
+        ResourceTableColumn(title: "Namespace", key: "namespace", width: 160, sortField: .namespace),
+        ResourceTableColumn(title: "Status", key: "status", width: 140, sortField: .status),
+        ResourceTableColumn(title: "Age", key: "age", width: 80, sortField: .age),
+    ]
 
     private var definition: CustomResourceDefinitionInfo {
         target.definitionInfo
@@ -407,48 +397,18 @@ private struct SelectedCustomResourceListView: View {
         VStack(spacing: 0) {
             header
             Divider()
-
-            if isLoading {
-                ProgressView()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let errorMessage {
-                EmptyStateView(
-                    icon: "exclamationmark.triangle",
-                    title: "Failed to Load Custom Resources",
-                    message: errorMessage
-                )
-            } else if filteredResources.isEmpty {
-                EmptyStateView(
-                    icon: "puzzlepiece.extension",
-                    title: "No \(definition.kind) Resources",
-                    message: "No resources found for \(definition.resourceIdentifier)."
-                )
-            } else {
-                table
-            }
+            table
         }
-        .task { await loadData() }
+        .task(id: target.id) { await loadData() }
         .onChange(of: appState.activeClusterID) { _, _ in
             Task { await loadData() }
         }
         .onChange(of: appState.selectedNamespace) { _, _ in
             Task { await loadData() }
         }
-        .confirmationDialog(
-            "Delete \(resourceToDelete?.name ?? "")?",
-            isPresented: $showDeleteConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) {
-                guard let resource = resourceToDelete else { return }
-                resourceToDelete = nil
-                Task { await deleteResource(resource) }
-            }
-            Button("Cancel", role: .cancel) {
-                resourceToDelete = nil
-            }
-        } message: {
-            Text(deleteConfirmationMessage)
+        .onChange(of: target.id) { _, _ in
+            appState.selectResource(nil)
+            viewModel.searchText = ""
         }
     }
 
@@ -473,16 +433,9 @@ private struct SelectedCustomResourceListView: View {
 
             Spacer()
 
-            if let operationMessage {
-                Text(operationMessage)
-                    .font(Theme.Fonts.caption)
-                    .foregroundStyle(operationIsError ? Theme.Colors.failed : Theme.Colors.secondaryText)
-                    .lineLimit(1)
-            }
-
-            TextField("Search...", text: $searchText)
-                .textFieldStyle(.roundedBorder)
-                .frame(width: 220)
+            Text("\(viewModel.filteredResources.count) items")
+                .font(Theme.Fonts.caption)
+                .foregroundStyle(Theme.Colors.secondaryText)
 
             Button {
                 Task { await loadData() }
@@ -497,75 +450,67 @@ private struct SelectedCustomResourceListView: View {
     }
 
     private var table: some View {
-        Table(filteredResources, selection: $selectedResourceID) {
-            TableColumn("Name") { item in
-                Text(item.name)
-                    .font(Theme.Fonts.tableCell)
-                    .contextMenu {
-                        Button {
-                            Task { await openYAML(item) }
-                        } label: {
-                            Label("View YAML", systemImage: "doc.text")
-                        }
-
-                        Button(role: .destructive) {
-                            resourceToDelete = item
-                            showDeleteConfirmation = true
-                        } label: {
-                            Label("Delete", systemImage: "trash")
-                        }
-                    }
+        ResourceTableView(
+            columns: columns,
+            viewModel: viewModel,
+            onViewYAML: { resource in
+                Task { await openYAML(resource) }
+            },
+            onDelete: { resource in
+                Task { await deleteResource(resource) }
+            },
+            deleteConfirmationMessageBuilder: { resource in
+                let namespace = resource.namespace ?? appState.selectedNamespace ?? "cluster-scoped"
+                return "Resource: \(definition.kind)\nNamespace: \(namespace)\nName: \(resource.name)\n\nThis action cannot be undone."
             }
-            TableColumn("Namespace") { item in
-                Text(item.namespace ?? "-")
-                    .font(Theme.Fonts.tableCell)
-                    .foregroundStyle(Theme.Colors.secondaryText)
-            }
-            TableColumn("Status") { item in
-                StatusBadge(status: item.status)
-            }
-            TableColumn("Age") { item in
-                if let age = item.age {
-                    AgeLabel(date: age)
-                } else {
-                    Text("-")
-                        .font(Theme.Fonts.tableCell)
-                        .foregroundStyle(Theme.Colors.tertiaryText)
-                }
-            }
-        }
-        .font(Theme.Fonts.tableCell)
-    }
-
-    private var deleteConfirmationMessage: String {
-        let namespace = resourceToDelete?.namespace ?? appState.selectedNamespace ?? "cluster-scoped"
-        return "Resource: \(definition.kind)\nNamespace: \(namespace)\n\nThis action cannot be undone."
+        )
     }
 
     private func loadData() async {
-        isLoading = true
-        errorMessage = nil
-        operationMessage = nil
+        viewModel.isLoading = true
+        viewModel.errorMessage = nil
         do {
             guard let client = try await clusterViewModel.clientForActiveCluster(appState: appState) else {
-                isLoading = false
+                viewModel.isLoading = false
                 return
             }
 
             let service = KubernetesService(client: client)
-            resources = try await service.listCustomResources(
+            let customResources = try await service.listCustomResources(
                 definition: definition,
                 namespace: definition.isNamespaced ? appState.selectedNamespace : nil,
                 context: appState.activeCluster?.contextName
             )
+            viewModel.resources = customResources.map(resourceItem(from:))
         } catch {
-            resources = []
-            errorMessage = error.localizedDescription
+            viewModel.resources = []
+            viewModel.errorMessage = error.localizedDescription
         }
-        isLoading = false
+        viewModel.isLoading = false
     }
 
-    private func openYAML(_ item: CustomResourceItem) async {
+    private func resourceID(name: String, namespace: String?) -> String {
+        if let namespace, !namespace.isEmpty {
+            return "\(namespace)/\(name)"
+        }
+        return name
+    }
+
+    private func resourceItem(from item: CustomResourceItem) -> ResourceItem {
+        // `ResourceItem.kind` is required by shared table/actions; custom resources use their own detail flow.
+        ResourceItem(
+            id: resourceID(name: item.name, namespace: item.namespace),
+            name: item.name,
+            namespace: item.namespace,
+            status: item.status,
+            age: item.age,
+            labels: [:],
+            annotations: [:],
+            kind: .endpoint
+        )
+    }
+
+    private func openYAML(_ resource: ResourceItem) async {
         do {
             guard let client = try await clusterViewModel.clientForActiveCluster(appState: appState) else {
                 return
@@ -573,18 +518,18 @@ private struct SelectedCustomResourceListView: View {
             let service = KubernetesService(client: client)
             let yaml = try await service.getCustomResourceYAML(
                 definition: definition,
-                name: item.name,
-                namespace: item.namespace,
+                name: resource.name,
+                namespace: resource.namespace,
                 context: appState.activeCluster?.contextName
             )
-            appState.showYAMLEditor(resourceID: nil, title: "YAML - \(item.name)", yaml: yaml)
+            appState.showYAMLEditor(resourceID: resource.id, title: "YAML - \(resource.name)", yaml: yaml)
         } catch {
-            operationIsError = true
-            operationMessage = "Failed to open YAML: \(error.localizedDescription)"
+            viewModel.operationState = .error("Failed to open YAML: \(error.localizedDescription)")
         }
     }
 
-    private func deleteResource(_ item: CustomResourceItem) async {
+    private func deleteResource(_ resource: ResourceItem) async {
+        viewModel.operationState = .running("Deleting \(definition.kind) \(resource.name)…")
         do {
             guard let client = try await clusterViewModel.clientForActiveCluster(appState: appState) else {
                 return
@@ -592,16 +537,14 @@ private struct SelectedCustomResourceListView: View {
             let service = KubernetesService(client: client)
             try await service.deleteCustomResource(
                 definition: definition,
-                name: item.name,
-                namespace: item.namespace,
+                name: resource.name,
+                namespace: resource.namespace,
                 context: appState.activeCluster?.contextName
             )
-            operationIsError = false
-            operationMessage = "Deleted \(item.name)"
+            viewModel.operationState = .success("Deleted \(definition.kind) \(resource.name)")
             await loadData()
         } catch {
-            operationIsError = true
-            operationMessage = "Delete failed: \(error.localizedDescription)"
+            viewModel.operationState = .error("Delete failed: \(error.localizedDescription)")
         }
     }
 }

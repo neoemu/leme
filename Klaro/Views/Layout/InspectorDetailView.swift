@@ -35,6 +35,40 @@ struct InspectorDetailView: View {
 
     @MainActor
     private func loadDetail(resourceID: String) async {
+        if case .customResource(let target) = appState.sidebarSelection {
+            let parts = resourceID.split(separator: "/", maxSplits: 1)
+            let name: String
+            let namespace: String?
+
+            if target.definitionInfo.isNamespaced {
+                if parts.count == 2 {
+                    namespace = String(parts[0])
+                    name = String(parts[1])
+                } else {
+                    namespace = appState.selectedNamespace
+                    name = String(parts[0])
+                }
+            } else {
+                name = parts.count == 2 ? String(parts[1]) : String(parts[0])
+                namespace = nil
+            }
+
+            do {
+                guard let client = try await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                let detail = ResourceDetailViewModel(client: client)
+                detailViewModel = detail
+                await detail.loadCustomResourceDetail(
+                    definition: target.definitionInfo,
+                    name: name,
+                    namespace: namespace,
+                    context: appState.activeCluster?.contextName
+                )
+            } catch {
+                // Best effort; detail panel shows error from view model when available.
+            }
+            return
+        }
+
         let parts = resourceID.split(separator: "/", maxSplits: 1)
         let namespace: String?
         let name: String
