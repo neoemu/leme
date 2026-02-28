@@ -4,15 +4,46 @@ import SwiftkubeModel
 import Yams
 
 struct NodeMetricSummary: Sendable {
+    let cpuUsageCores: Double?
     let cpuRequestedCores: Double
     let cpuAllocatableCores: Double
     let cpuCapacityCores: Double
+    let memoryUsageGiB: Double?
     let memoryRequestedGiB: Double
     let memoryAllocatableGiB: Double
     let memoryCapacityGiB: Double
+    let networkRxBytesPerSecond: Double?
+    let networkTxBytesPerSecond: Double?
+    let networkRxTotalBytes: Double?
+    let networkTxTotalBytes: Double?
+    let diskUsageGiB: Double?
+    let diskRequestedGiB: Double
+    let diskAllocatableGiB: Double
+    let diskCapacityGiB: Double
     let podCount: Int
     let podAllocatable: Int
     let podCapacity: Int
+    let metricsAvailable: Bool
+    let metricsTimestamp: Date?
+}
+
+struct NodeMetricsHistoryPoint: Identifiable, Sendable {
+    let id: Date
+    let timestamp: Date
+    let cpuUsageCores: Double?
+    let cpuRequestedCores: Double
+    let cpuAllocatableCores: Double
+    let cpuCapacityCores: Double
+    let memoryUsageGiB: Double?
+    let memoryRequestedGiB: Double
+    let memoryAllocatableGiB: Double
+    let memoryCapacityGiB: Double
+    let networkRxBytesPerSecond: Double?
+    let networkTxBytesPerSecond: Double?
+    let diskUsageGiB: Double?
+    let diskRequestedGiB: Double
+    let diskAllocatableGiB: Double
+    let diskCapacityGiB: Double
 }
 
 struct NodePropertyItem: Identifiable, Sendable {
@@ -63,8 +94,18 @@ final class ResourceDetailViewModel {
     var annotations: [String: String] = [:]
     var events: [ResourceItem] = []
     var nodeOverview: NodeOverview?
+    var nodeMetricsHistory: [NodeMetricsHistoryPoint] = []
 
     private let kubernetesService: KubernetesService
+    private var nodeMetricsRefreshTask: Task<Void, Never>?
+    private var activeNodeNameForMetrics: String?
+    private var lastNodeNetworkCounterSample: NodeNetworkCounterSample?
+
+    private struct NodeNetworkCounterSample {
+        let timestamp: Date
+        let rxBytes: Double
+        let txBytes: Double
+    }
 
     init(client: KubernetesClient) {
         self.kubernetesService = KubernetesService(client: client)
@@ -79,7 +120,9 @@ final class ResourceDetailViewModel {
     func loadPodDetail(name: String, namespace: String) async {
         isLoading = true
         errorMessage = nil
+        stopNodeMetricsRefresh()
         nodeOverview = nil
+        nodeMetricsHistory = []
         do {
             let pod = try await kubernetesService.get(core.v1.Pod.self, name: name, in: namespace)
             extractMetadata(from: pod)
@@ -101,7 +144,9 @@ final class ResourceDetailViewModel {
     func loadDeploymentDetail(name: String, namespace: String) async {
         isLoading = true
         errorMessage = nil
+        stopNodeMetricsRefresh()
         nodeOverview = nil
+        nodeMetricsHistory = []
         do {
             let deployment = try await kubernetesService.get(apps.v1.Deployment.self, name: name, in: namespace)
             extractMetadata(from: deployment)
@@ -126,7 +171,9 @@ final class ResourceDetailViewModel {
     ) async {
         isLoading = true
         errorMessage = nil
+        stopNodeMetricsRefresh()
         nodeOverview = nil
+        nodeMetricsHistory = []
         do {
             let resource = try await kubernetesService.get(type, name: name, in: namespace)
             extractMetadata(from: resource)
@@ -148,7 +195,9 @@ final class ResourceDetailViewModel {
     ) async {
         isLoading = true
         errorMessage = nil
+        stopNodeMetricsRefresh()
         nodeOverview = nil
+        nodeMetricsHistory = []
         do {
             let resource = try await kubernetesService.getClusterScoped(type, name: name)
             extractMetadata(from: resource)
@@ -171,7 +220,9 @@ final class ResourceDetailViewModel {
     ) async {
         isLoading = true
         errorMessage = nil
+        stopNodeMetricsRefresh()
         nodeOverview = nil
+        nodeMetricsHistory = []
         metadata = [:]
         labels = [:]
         annotations = [:]
@@ -200,7 +251,9 @@ final class ResourceDetailViewModel {
     func loadNodeDetail(name: String) async {
         isLoading = true
         errorMessage = nil
+        stopNodeMetricsRefresh()
         nodeOverview = nil
+        nodeMetricsHistory = []
         do {
             let node = try await kubernetesService.getClusterScoped(core.v1.Node.self, name: name)
             extractMetadata(from: node)
@@ -212,7 +265,25 @@ final class ResourceDetailViewModel {
             }
 
             let allPods = try await kubernetesService.list(core.v1.Pod.self, in: nil).items
-            nodeOverview = Self.extractNodeOverview(from: node, allPods: allPods)
+            async let usageTask: NodeUsageMetricsSample? = try? kubernetesService.fetchNodeUsageMetrics(name: name)
+            async let summaryTask: NodeSummaryMetricsSample? = try? kubernetesService.fetchNodeSummaryMetrics(name: name)
+            let usageMetrics = await usageTask
+            let summaryMetrics = await summaryTask
+
+            if let sample = Self.networkCounterSample(from: summaryMetrics) {
+                lastNodeNetworkCounterSample = sample
+            }
+
+            nodeOverview = Self.extractNodeOverview(
+                from: node,
+                allPods: allPods,
+                usageMetrics: usageMetrics,
+                summaryMetrics: summaryMetrics
+            )
+            if let nodeOverview {
+                appendNodeMetricsSample(from: nodeOverview.metrics)
+            }
+            startNodeMetricsRefresh(for: name)
             await loadClusterScopedEvents(forResource: name, kind: "Node")
         } catch {
             errorMessage = error.localizedDescription
@@ -363,7 +434,12 @@ final class ResourceDetailViewModel {
         annotations = metadataNode["annotations"] as? [String: String] ?? [:]
     }
 
-    private static func extractNodeOverview(from node: core.v1.Node, allPods: [core.v1.Pod]) -> NodeOverview {
+    private static func extractNodeOverview(
+        from node: core.v1.Node,
+        allPods: [core.v1.Pod],
+        usageMetrics: NodeUsageMetricsSample?,
+        summaryMetrics: NodeSummaryMetricsSample?
+    ) -> NodeOverview {
         let nodeName = node.name ?? ""
         let nodePods = allPods.filter { $0.spec?.nodeName == nodeName }
 
@@ -374,11 +450,14 @@ final class ResourceDetailViewModel {
         let cpuAllocatableCores = (allocatableMap["cpu"] ?? "0").parseKubernetesCPU()
         let memoryCapacityGiB = (capacityMap["memory"] ?? "0").parseKubernetesMemoryGiB()
         let memoryAllocatableGiB = (allocatableMap["memory"] ?? "0").parseKubernetesMemoryGiB()
+        let diskCapacityGiB = (capacityMap["ephemeral-storage"] ?? "0").parseKubernetesMemoryGiB()
+        let diskAllocatableGiB = (allocatableMap["ephemeral-storage"] ?? "0").parseKubernetesMemoryGiB()
         let podCapacity = Int(capacityMap["pods"] ?? "0") ?? 0
         let podAllocatable = Int(allocatableMap["pods"] ?? "0") ?? 0
 
         var cpuRequestedCores = 0.0
         var memoryRequestedGiB = 0.0
+        var diskRequestedGiB = 0.0
 
         let podItems = nodePods
             .map { pod -> NodePodItem in
@@ -395,6 +474,9 @@ final class ResourceDetailViewModel {
                     }
                     if let memReq = container.resources?.requests?["memory"]?.description {
                         podMemory += memReq.parseKubernetesMemoryGiB()
+                    }
+                    if let diskReq = container.resources?.requests?["ephemeral-storage"]?.description {
+                        diskRequestedGiB += diskReq.parseKubernetesMemoryGiB()
                     }
                 }
                 cpuRequestedCores += podCPU
@@ -446,15 +528,27 @@ final class ResourceDetailViewModel {
 
         return NodeOverview(
             metrics: NodeMetricSummary(
+                cpuUsageCores: usageMetrics?.cpuUsageCores,
                 cpuRequestedCores: cpuRequestedCores,
                 cpuAllocatableCores: cpuAllocatableCores,
                 cpuCapacityCores: cpuCapacityCores,
+                memoryUsageGiB: usageMetrics?.memoryUsageGiB ?? summaryMetrics?.memoryWorkingSetGiB,
                 memoryRequestedGiB: memoryRequestedGiB,
                 memoryAllocatableGiB: memoryAllocatableGiB,
                 memoryCapacityGiB: memoryCapacityGiB,
+                networkRxBytesPerSecond: nil,
+                networkTxBytesPerSecond: nil,
+                networkRxTotalBytes: summaryMetrics?.networkRxTotalBytes,
+                networkTxTotalBytes: summaryMetrics?.networkTxTotalBytes,
+                diskUsageGiB: summaryMetrics?.diskUsageGiB,
+                diskRequestedGiB: diskRequestedGiB,
+                diskAllocatableGiB: diskAllocatableGiB,
+                diskCapacityGiB: summaryMetrics?.diskCapacityGiB ?? diskCapacityGiB,
                 podCount: nodePods.count,
                 podAllocatable: podAllocatable,
-                podCapacity: podCapacity
+                podCapacity: podCapacity,
+                metricsAvailable: usageMetrics != nil || summaryMetrics != nil,
+                metricsTimestamp: usageMetrics?.timestamp ?? summaryMetrics?.timestamp
             ),
             properties: properties,
             capacity: orderedNodeResources(from: capacityMap),
@@ -510,6 +604,131 @@ final class ResourceDetailViewModel {
             return String(format: "%.1fGi", gib)
         }
         return String(format: "%.2fGi", gib)
+    }
+
+    private static func networkCounterSample(from summary: NodeSummaryMetricsSample?) -> NodeNetworkCounterSample? {
+        guard let summary,
+              let rx = summary.networkRxTotalBytes,
+              let tx = summary.networkTxTotalBytes else {
+            return nil
+        }
+
+        return NodeNetworkCounterSample(
+            timestamp: summary.timestamp ?? Date(),
+            rxBytes: rx,
+            txBytes: tx
+        )
+    }
+
+    private func startNodeMetricsRefresh(for nodeName: String) {
+        stopNodeMetricsRefresh()
+        activeNodeNameForMetrics = nodeName
+        nodeMetricsRefreshTask = Task { [weak self] in
+            guard let self else { return }
+            await self.refreshNodeMetricsSample(for: nodeName)
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(3))
+                guard !Task.isCancelled else { break }
+                await self.refreshNodeMetricsSample(for: nodeName)
+            }
+        }
+    }
+
+    private func stopNodeMetricsRefresh() {
+        nodeMetricsRefreshTask?.cancel()
+        nodeMetricsRefreshTask = nil
+        activeNodeNameForMetrics = nil
+        lastNodeNetworkCounterSample = nil
+    }
+
+    private func refreshNodeMetricsSample(for nodeName: String) async {
+        guard activeNodeNameForMetrics == nodeName else { return }
+        guard let currentOverview = nodeOverview else { return }
+
+        async let usageTask: NodeUsageMetricsSample? = try? kubernetesService.fetchNodeUsageMetrics(name: nodeName)
+        async let summaryTask: NodeSummaryMetricsSample? = try? kubernetesService.fetchNodeSummaryMetrics(name: nodeName)
+        let usageMetrics = await usageTask
+        let summaryMetrics = await summaryTask
+
+        let nextCounterSample = Self.networkCounterSample(from: summaryMetrics)
+        let networkRates: (rx: Double?, tx: Double?) = {
+            guard let next = nextCounterSample else {
+                return (currentOverview.metrics.networkRxBytesPerSecond, currentOverview.metrics.networkTxBytesPerSecond)
+            }
+            defer { lastNodeNetworkCounterSample = next }
+            guard let previous = lastNodeNetworkCounterSample else {
+                return (currentOverview.metrics.networkRxBytesPerSecond, currentOverview.metrics.networkTxBytesPerSecond)
+            }
+
+            let elapsed = next.timestamp.timeIntervalSince(previous.timestamp)
+            guard elapsed > 0.2 else {
+                return (currentOverview.metrics.networkRxBytesPerSecond, currentOverview.metrics.networkTxBytesPerSecond)
+            }
+
+            let rxRate = max(0, (next.rxBytes - previous.rxBytes) / elapsed)
+            let txRate = max(0, (next.txBytes - previous.txBytes) / elapsed)
+            return (rxRate, txRate)
+        }()
+
+        let updatedMetrics = NodeMetricSummary(
+            cpuUsageCores: usageMetrics?.cpuUsageCores ?? currentOverview.metrics.cpuUsageCores,
+            cpuRequestedCores: currentOverview.metrics.cpuRequestedCores,
+            cpuAllocatableCores: currentOverview.metrics.cpuAllocatableCores,
+            cpuCapacityCores: currentOverview.metrics.cpuCapacityCores,
+            memoryUsageGiB: usageMetrics?.memoryUsageGiB ?? summaryMetrics?.memoryWorkingSetGiB ?? currentOverview.metrics.memoryUsageGiB,
+            memoryRequestedGiB: currentOverview.metrics.memoryRequestedGiB,
+            memoryAllocatableGiB: currentOverview.metrics.memoryAllocatableGiB,
+            memoryCapacityGiB: currentOverview.metrics.memoryCapacityGiB,
+            networkRxBytesPerSecond: networkRates.rx,
+            networkTxBytesPerSecond: networkRates.tx,
+            networkRxTotalBytes: summaryMetrics?.networkRxTotalBytes ?? currentOverview.metrics.networkRxTotalBytes,
+            networkTxTotalBytes: summaryMetrics?.networkTxTotalBytes ?? currentOverview.metrics.networkTxTotalBytes,
+            diskUsageGiB: summaryMetrics?.diskUsageGiB ?? currentOverview.metrics.diskUsageGiB,
+            diskRequestedGiB: currentOverview.metrics.diskRequestedGiB,
+            diskAllocatableGiB: currentOverview.metrics.diskAllocatableGiB,
+            diskCapacityGiB: summaryMetrics?.diskCapacityGiB ?? currentOverview.metrics.diskCapacityGiB,
+            podCount: currentOverview.metrics.podCount,
+            podAllocatable: currentOverview.metrics.podAllocatable,
+            podCapacity: currentOverview.metrics.podCapacity,
+            metricsAvailable: usageMetrics != nil || summaryMetrics != nil || currentOverview.metrics.metricsAvailable,
+            metricsTimestamp: usageMetrics?.timestamp ?? summaryMetrics?.timestamp ?? currentOverview.metrics.metricsTimestamp
+        )
+
+        nodeOverview = NodeOverview(
+            metrics: updatedMetrics,
+            properties: currentOverview.properties,
+            capacity: currentOverview.capacity,
+            allocatable: currentOverview.allocatable,
+            pods: currentOverview.pods
+        )
+        appendNodeMetricsSample(from: updatedMetrics)
+    }
+
+    private func appendNodeMetricsSample(from metrics: NodeMetricSummary) {
+        let timestamp = metrics.metricsTimestamp ?? Date()
+        nodeMetricsHistory.append(
+            NodeMetricsHistoryPoint(
+                id: timestamp,
+                timestamp: timestamp,
+                cpuUsageCores: metrics.cpuUsageCores,
+                cpuRequestedCores: metrics.cpuRequestedCores,
+                cpuAllocatableCores: metrics.cpuAllocatableCores,
+                cpuCapacityCores: metrics.cpuCapacityCores,
+                memoryUsageGiB: metrics.memoryUsageGiB,
+                memoryRequestedGiB: metrics.memoryRequestedGiB,
+                memoryAllocatableGiB: metrics.memoryAllocatableGiB,
+                memoryCapacityGiB: metrics.memoryCapacityGiB,
+                networkRxBytesPerSecond: metrics.networkRxBytesPerSecond,
+                networkTxBytesPerSecond: metrics.networkTxBytesPerSecond,
+                diskUsageGiB: metrics.diskUsageGiB,
+                diskRequestedGiB: metrics.diskRequestedGiB,
+                diskAllocatableGiB: metrics.diskAllocatableGiB,
+                diskCapacityGiB: metrics.diskCapacityGiB
+            )
+        )
+        if nodeMetricsHistory.count > 60 {
+            nodeMetricsHistory.removeFirst(nodeMetricsHistory.count - 60)
+        }
     }
 
     // MARK: - YAML Cleanup

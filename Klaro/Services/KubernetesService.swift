@@ -93,6 +93,21 @@ struct CustomResourceItem: Identifiable, Sendable, Hashable {
     let annotations: [String: String]
 }
 
+struct NodeUsageMetricsSample: Sendable {
+    let cpuUsageCores: Double
+    let memoryUsageGiB: Double
+    let timestamp: Date?
+}
+
+struct NodeSummaryMetricsSample: Sendable {
+    let timestamp: Date?
+    let memoryWorkingSetGiB: Double?
+    let networkRxTotalBytes: Double?
+    let networkTxTotalBytes: Double?
+    let diskUsageGiB: Double?
+    let diskCapacityGiB: Double?
+}
+
 // MARK: - KubernetesService
 
 /// A facade actor that wraps a KubernetesClient instance and provides
@@ -416,6 +431,72 @@ actor KubernetesService {
         }
 
         return !items.isEmpty
+    }
+
+    func fetchNodeUsageMetrics(name: String) async throws -> NodeUsageMetricsSample {
+        let rawPath = "/apis/metrics.k8s.io/v1beta1/nodes/\(name)"
+        let output = try executeKubectl(arguments: ["get", "--raw", rawPath, "--request-timeout=3s"])
+
+        guard let jsonData = output.stdout.data(using: .utf8),
+              let root = try JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+              let usage = root["usage"] as? [String: Any] else {
+            throw KubernetesServiceError.operationFailed("Failed to decode node metrics output.")
+        }
+
+        let cpuUsageRaw = usage["cpu"] as? String ?? "0"
+        let memoryUsageRaw = usage["memory"] as? String ?? "0"
+        let timestampString = root["timestamp"] as? String
+
+        let timestamp: Date?
+        if let timestampString {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            timestamp = formatter.date(from: timestampString) ?? ISO8601DateFormatter().date(from: timestampString)
+        } else {
+            timestamp = nil
+        }
+
+        return NodeUsageMetricsSample(
+            cpuUsageCores: cpuUsageRaw.parseKubernetesCPU(),
+            memoryUsageGiB: memoryUsageRaw.parseKubernetesMemoryGiB(),
+            timestamp: timestamp
+        )
+    }
+
+    func fetchNodeSummaryMetrics(name: String) async throws -> NodeSummaryMetricsSample {
+        let rawPath = "/api/v1/nodes/\(name)/proxy/stats/summary"
+        let output = try executeKubectl(arguments: ["get", "--raw", rawPath, "--request-timeout=3s"])
+
+        guard let jsonData = output.stdout.data(using: .utf8),
+              let root = try JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+              let node = root["node"] as? [String: Any] else {
+            throw KubernetesServiceError.operationFailed("Failed to decode node summary output.")
+        }
+
+        let memory = node["memory"] as? [String: Any]
+        let network = node["network"] as? [String: Any]
+        let filesystem = node["fs"] as? [String: Any]
+
+        let timestamp = Self.parseSummaryDate(
+            memory?["time"] as? String
+                ?? network?["time"] as? String
+                ?? filesystem?["time"] as? String
+        )
+
+        let memoryWorkingSetGiB = Self.parseSummaryDouble(memory?["workingSetBytes"]).map { $0 / (1024 * 1024 * 1024) }
+        let networkRxTotalBytes = Self.parseSummaryDouble(network?["rxBytes"])
+        let networkTxTotalBytes = Self.parseSummaryDouble(network?["txBytes"])
+        let diskUsedGiB = Self.parseSummaryDouble(filesystem?["usedBytes"]).map { $0 / (1024 * 1024 * 1024) }
+        let diskCapacityGiB = Self.parseSummaryDouble(filesystem?["capacityBytes"]).map { $0 / (1024 * 1024 * 1024) }
+
+        return NodeSummaryMetricsSample(
+            timestamp: timestamp,
+            memoryWorkingSetGiB: memoryWorkingSetGiB,
+            networkRxTotalBytes: networkRxTotalBytes,
+            networkTxTotalBytes: networkTxTotalBytes,
+            diskUsageGiB: diskUsedGiB,
+            diskCapacityGiB: diskCapacityGiB
+        )
     }
 
     // MARK: - Create / Update Operations
@@ -770,6 +851,24 @@ actor KubernetesService {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
         return formatter.date(from: value)
+    }
+
+    private static func parseSummaryDate(_ value: String?) -> Date? {
+        parseKubernetesDate(value)
+    }
+
+    private static func parseSummaryDouble(_ value: Any?) -> Double? {
+        guard let value else { return nil }
+
+        if let number = value as? NSNumber {
+            return number.doubleValue
+        }
+
+        if let string = value as? String {
+            return Double(string)
+        }
+
+        return nil
     }
 
     // MARK: - Private Helpers

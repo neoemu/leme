@@ -1,5 +1,6 @@
 import SwiftUI
 import CodeEditor
+import Foundation
 
 enum ResourceDetailTab: String, CaseIterable, Identifiable, Sendable {
     case overview = "Overview"
@@ -24,11 +25,39 @@ enum YAMLDisplayMode: String, CaseIterable, Identifiable, Sendable {
     var id: String { rawValue }
 }
 
+enum NodeMetricsViewMode: String, CaseIterable, Identifiable, Sendable {
+    case cpu
+    case memory
+    case network
+    case disk
+
+    var id: String { rawValue }
+
+    var icon: String {
+        switch self {
+        case .cpu: return "cpu"
+        case .memory: return "memorychip"
+        case .network: return "arrow.up.arrow.down"
+        case .disk: return "internaldrive"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .cpu: return "CPU"
+        case .memory: return "Memory"
+        case .network: return "Network"
+        case .disk: return "Disk"
+        }
+    }
+}
+
 struct ResourceDetailPanel: View {
     @Environment(AppState.self) private var appState
     @Bindable var viewModel: ResourceDetailViewModel
     @State private var selectedTab: ResourceDetailTab = .overview
     @State private var yamlDisplayMode: YAMLDisplayMode = .clean
+    @State private var nodeMetricsMode: NodeMetricsViewMode = .cpu
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -197,24 +226,19 @@ struct ResourceDetailPanel: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Dimensions.sectionSpacing) {
                 cardSection(title: "Metrics") {
-                    CapacityBar(
-                        label: "CPU Requests",
-                        used: node.metrics.cpuRequestedCores,
-                        total: max(node.metrics.cpuAllocatableCores, node.metrics.cpuCapacityCores),
-                        unit: "cores"
-                    )
-                    CapacityBar(
-                        label: "Memory Requests",
-                        used: node.metrics.memoryRequestedGiB,
-                        total: max(node.metrics.memoryAllocatableGiB, node.metrics.memoryCapacityGiB),
-                        unit: "GiB"
-                    )
-                    CapacityBar(
-                        label: "Pods",
-                        used: Double(node.metrics.podCount),
-                        total: Double(max(node.metrics.podAllocatable, node.metrics.podCapacity)),
-                        unit: ""
-                    )
+                    nodeMetricsModeToolbar
+                    nodeMetricsLegend(for: nodeMetricsMode)
+
+                    if !viewModel.nodeMetricsHistory.isEmpty {
+                        nodeMetricsChart(points: viewModel.nodeMetricsHistory, mode: nodeMetricsMode)
+                            .frame(height: 150)
+                    }
+
+                    Text(nodeMetricsSourceText(node.metrics))
+                        .font(Theme.Fonts.caption)
+                        .foregroundStyle(node.metrics.metricsAvailable ? Theme.Colors.secondaryText : Theme.Colors.tertiaryText)
+
+                    nodeMetricsSummary(for: node.metrics, mode: nodeMetricsMode)
                 }
 
                 cardSection(title: "Properties") {
@@ -358,6 +382,312 @@ struct ResourceDetailPanel: View {
                 }
             }
         }
+    }
+
+    private struct NodeMetricSeries: Identifiable {
+        let id: String
+        let label: String
+        let color: Color
+        let values: [Double?]
+        let lineWidth: CGFloat
+    }
+
+    private var nodeMetricsModeToolbar: some View {
+        HStack(spacing: 6) {
+            ForEach(NodeMetricsViewMode.allCases) { mode in
+                Button {
+                    withAnimation(Theme.Animations.tabTransition) {
+                        nodeMetricsMode = mode
+                    }
+                } label: {
+                    Image(systemName: mode.icon)
+                        .font(.system(size: 13, weight: .semibold))
+                        .frame(width: 30, height: 30)
+                        .background(
+                            RoundedRectangle(cornerRadius: 7)
+                                .fill(nodeMetricsMode == mode ? Theme.Colors.accent.opacity(0.18) : Theme.Colors.cardBackground)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 7)
+                                .stroke(nodeMetricsMode == mode ? Theme.Colors.accent.opacity(0.55) : Theme.Colors.cardBorder, lineWidth: 0.7)
+                        )
+                        .foregroundStyle(nodeMetricsMode == mode ? Theme.Colors.accent : Theme.Colors.secondaryText)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(mode.title)
+            }
+            Spacer()
+        }
+    }
+
+    @ViewBuilder
+    private func nodeMetricsLegend(for mode: NodeMetricsViewMode) -> some View {
+        HStack(spacing: Theme.Dimensions.spacing) {
+            switch mode {
+            case .cpu:
+                legendItem(label: "CPU Usage", color: Color(red: 0.16, green: 0.70, blue: 0.96))
+                legendItem(label: "CPU Requests", color: Color(red: 0.20, green: 0.82, blue: 0.45))
+                legendItem(label: "CPU Allocatable", color: Color(red: 0.56, green: 0.66, blue: 0.98))
+                legendItem(label: "CPU Capacity", color: Theme.Colors.tertiaryText)
+            case .memory:
+                legendItem(label: "Memory Usage", color: Color(red: 0.82, green: 0.28, blue: 0.84))
+                legendItem(label: "Memory Requests", color: Color(red: 0.20, green: 0.82, blue: 0.45))
+                legendItem(label: "Memory Allocatable", color: Color(red: 0.24, green: 0.45, blue: 0.86))
+                legendItem(label: "Memory Capacity", color: Theme.Colors.tertiaryText)
+            case .network:
+                legendItem(label: "Receive", color: Color(red: 0.22, green: 0.77, blue: 0.94))
+                legendItem(label: "Transmit", color: Color(red: 0.68, green: 0.41, blue: 0.93))
+            case .disk:
+                legendItem(label: "Disk Usage", color: Color(red: 0.95, green: 0.74, blue: 0.24))
+                legendItem(label: "Disk Requests", color: Color(red: 0.20, green: 0.82, blue: 0.45))
+                legendItem(label: "Disk Allocatable", color: Color(red: 0.24, green: 0.45, blue: 0.86))
+                legendItem(label: "Disk Capacity", color: Theme.Colors.tertiaryText)
+            }
+            Spacer()
+        }
+    }
+
+    private func legendItem(label: String, color: Color) -> some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(color)
+                .frame(width: 6, height: 6)
+            Text(label)
+                .font(Theme.Fonts.caption)
+                .foregroundStyle(Theme.Colors.secondaryText)
+        }
+    }
+
+    private func nodeMetricsSourceText(_ metrics: NodeMetricSummary) -> String {
+        guard metrics.metricsAvailable else {
+            return "Live usage unavailable. Showing requested and capacity values."
+        }
+        guard let timestamp = metrics.metricsTimestamp else {
+            return "Live usage from metrics.k8s.io / kubelet summary"
+        }
+        let formatter = DateFormatter()
+        formatter.timeStyle = .medium
+        formatter.dateStyle = .none
+        return "Live usage from metrics.k8s.io / kubelet summary • updated \(formatter.string(from: timestamp))"
+    }
+
+    private func nodeMetricsChart(points: [NodeMetricsHistoryPoint], mode: NodeMetricsViewMode) -> some View {
+        let series = nodeMetricSeries(for: mode, points: points)
+        let maxValue = max(1.0, series.flatMap { $0.values.compactMap { $0 } }.max() ?? 1.0)
+
+        return GeometryReader { geometry in
+            ZStack(alignment: .topLeading) {
+                VStack(spacing: 0) {
+                    ForEach(0..<5, id: \.self) { idx in
+                        Divider()
+                            .overlay(Theme.Colors.separator.opacity(idx == 0 ? 0.35 : 0.22))
+                        if idx < 4 { Spacer() }
+                    }
+                }
+
+                ForEach(series.indices, id: \.self) { idx in
+                    linePath(values: series[idx].values, in: geometry.size, maxValue: maxValue)
+                        .stroke(series[idx].color, style: StrokeStyle(lineWidth: series[idx].lineWidth))
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(nodeMetricYAxisTitle(for: mode))
+                        .font(Theme.Fonts.caption)
+                        .foregroundStyle(Theme.Colors.secondaryText)
+                    Text("max \(nodeMetricMaxValueText(maxValue, mode: mode))")
+                        .font(Theme.Fonts.monoSmall)
+                        .foregroundStyle(Theme.Colors.tertiaryText)
+                }
+                .padding(6)
+            }
+        }
+    }
+
+    private func nodeMetricSeries(for mode: NodeMetricsViewMode, points: [NodeMetricsHistoryPoint]) -> [NodeMetricSeries] {
+        switch mode {
+        case .cpu:
+            return [
+                NodeMetricSeries(id: "cpu-capacity", label: "CPU Capacity", color: Theme.Colors.tertiaryText.opacity(0.85), values: points.map { Optional($0.cpuCapacityCores) }, lineWidth: 1.2),
+                NodeMetricSeries(id: "cpu-allocatable", label: "CPU Allocatable", color: Color(red: 0.56, green: 0.66, blue: 0.98), values: points.map { Optional($0.cpuAllocatableCores) }, lineWidth: 1.4),
+                NodeMetricSeries(id: "cpu-requests", label: "CPU Requests", color: Color(red: 0.20, green: 0.82, blue: 0.45), values: points.map { Optional($0.cpuRequestedCores) }, lineWidth: 1.6),
+                NodeMetricSeries(id: "cpu-usage", label: "CPU Usage", color: Color(red: 0.16, green: 0.70, blue: 0.96), values: points.map(\.cpuUsageCores), lineWidth: 1.8),
+            ]
+        case .memory:
+            return [
+                NodeMetricSeries(id: "memory-capacity", label: "Memory Capacity", color: Theme.Colors.tertiaryText.opacity(0.85), values: points.map { Optional($0.memoryCapacityGiB) }, lineWidth: 1.2),
+                NodeMetricSeries(id: "memory-allocatable", label: "Memory Allocatable", color: Color(red: 0.24, green: 0.45, blue: 0.86), values: points.map { Optional($0.memoryAllocatableGiB) }, lineWidth: 1.4),
+                NodeMetricSeries(id: "memory-requests", label: "Memory Requests", color: Color(red: 0.20, green: 0.82, blue: 0.45), values: points.map { Optional($0.memoryRequestedGiB) }, lineWidth: 1.6),
+                NodeMetricSeries(id: "memory-usage", label: "Memory Usage", color: Color(red: 0.82, green: 0.28, blue: 0.84), values: points.map(\.memoryUsageGiB), lineWidth: 1.8),
+            ]
+        case .network:
+            return [
+                NodeMetricSeries(id: "network-rx", label: "Receive", color: Color(red: 0.22, green: 0.77, blue: 0.94), values: points.map(\.networkRxBytesPerSecond), lineWidth: 1.8),
+                NodeMetricSeries(id: "network-tx", label: "Transmit", color: Color(red: 0.68, green: 0.41, blue: 0.93), values: points.map(\.networkTxBytesPerSecond), lineWidth: 1.8),
+            ]
+        case .disk:
+            return [
+                NodeMetricSeries(id: "disk-capacity", label: "Disk Capacity", color: Theme.Colors.tertiaryText.opacity(0.85), values: points.map { Optional($0.diskCapacityGiB) }, lineWidth: 1.2),
+                NodeMetricSeries(id: "disk-allocatable", label: "Disk Allocatable", color: Color(red: 0.24, green: 0.45, blue: 0.86), values: points.map { Optional($0.diskAllocatableGiB) }, lineWidth: 1.4),
+                NodeMetricSeries(id: "disk-requests", label: "Disk Requests", color: Color(red: 0.20, green: 0.82, blue: 0.45), values: points.map { Optional($0.diskRequestedGiB) }, lineWidth: 1.6),
+                NodeMetricSeries(id: "disk-usage", label: "Disk Usage", color: Color(red: 0.95, green: 0.74, blue: 0.24), values: points.map(\.diskUsageGiB), lineWidth: 1.8),
+            ]
+        }
+    }
+
+    private func nodeMetricYAxisTitle(for mode: NodeMetricsViewMode) -> String {
+        switch mode {
+        case .cpu:
+            return "CPU Cores"
+        case .memory, .disk:
+            return "GiB"
+        case .network:
+            return "Bytes/s"
+        }
+    }
+
+    private func nodeMetricMaxValueText(_ value: Double, mode: NodeMetricsViewMode) -> String {
+        switch mode {
+        case .cpu:
+            return String(format: "%.2f", value)
+        case .memory, .disk:
+            return String(format: "%.1f GiB", value)
+        case .network:
+            return formatByteRate(value)
+        }
+    }
+
+    @ViewBuilder
+    private func nodeMetricsSummary(for metrics: NodeMetricSummary, mode: NodeMetricsViewMode) -> some View {
+        switch mode {
+        case .cpu:
+            if let cpuUsage = metrics.cpuUsageCores {
+                CapacityBar(
+                    label: "CPU Usage",
+                    used: cpuUsage,
+                    total: max(metrics.cpuAllocatableCores, metrics.cpuCapacityCores),
+                    unit: "cores"
+                )
+            }
+            CapacityBar(
+                label: "CPU Requests",
+                used: metrics.cpuRequestedCores,
+                total: max(metrics.cpuAllocatableCores, metrics.cpuCapacityCores),
+                unit: "cores"
+            )
+            CapacityBar(
+                label: "Pods",
+                used: Double(metrics.podCount),
+                total: Double(max(metrics.podAllocatable, metrics.podCapacity)),
+                unit: ""
+            )
+
+        case .memory:
+            if let memoryUsage = metrics.memoryUsageGiB {
+                CapacityBar(
+                    label: "Memory Usage",
+                    used: memoryUsage,
+                    total: max(metrics.memoryAllocatableGiB, metrics.memoryCapacityGiB),
+                    unit: "GiB"
+                )
+            }
+            CapacityBar(
+                label: "Memory Requests",
+                used: metrics.memoryRequestedGiB,
+                total: max(metrics.memoryAllocatableGiB, metrics.memoryCapacityGiB),
+                unit: "GiB"
+            )
+
+        case .network:
+            metricValueRow(label: "Receive", value: metrics.networkRxBytesPerSecond.map(formatByteRate) ?? "-")
+            metricValueRow(label: "Transmit", value: metrics.networkTxBytesPerSecond.map(formatByteRate) ?? "-")
+            if metrics.networkRxBytesPerSecond == nil && metrics.networkTxBytesPerSecond == nil {
+                Text("Network throughput appears after a couple of samples.")
+                    .font(Theme.Fonts.caption)
+                    .foregroundStyle(Theme.Colors.tertiaryText)
+            }
+
+        case .disk:
+            if let diskUsage = metrics.diskUsageGiB {
+                CapacityBar(
+                    label: "Disk Usage",
+                    used: diskUsage,
+                    total: max(metrics.diskAllocatableGiB, metrics.diskCapacityGiB),
+                    unit: "GiB"
+                )
+            }
+            CapacityBar(
+                label: "Disk Requests",
+                used: metrics.diskRequestedGiB,
+                total: max(metrics.diskAllocatableGiB, metrics.diskCapacityGiB),
+                unit: "GiB"
+            )
+        }
+    }
+
+    private func metricValueRow(label: String, value: String) -> some View {
+        HStack {
+            Text(label)
+                .font(Theme.Fonts.subtitle)
+                .foregroundStyle(.primary)
+            Spacer()
+            Text(value)
+                .font(Theme.Fonts.monoMedium)
+                .foregroundStyle(Theme.Colors.secondaryText)
+        }
+    }
+
+    private func formatByteRate(_ bytesPerSecond: Double) -> String {
+        if bytesPerSecond >= 1_073_741_824 {
+            return String(format: "%.2f GiB/s", bytesPerSecond / 1_073_741_824)
+        }
+        if bytesPerSecond >= 1_048_576 {
+            return String(format: "%.1f MiB/s", bytesPerSecond / 1_048_576)
+        }
+        if bytesPerSecond >= 1024 {
+            return String(format: "%.1f KiB/s", bytesPerSecond / 1024)
+        }
+        return String(format: "%.0f B/s", bytesPerSecond)
+    }
+
+    private func linePath(values: [Double?], in size: CGSize, maxValue: Double) -> Path {
+        guard !values.isEmpty, maxValue > 0, size.width > 0, size.height > 0 else { return Path() }
+
+        // Render immediately with a single sample so the chart never appears "empty"
+        // while waiting for the second polling cycle.
+        if values.count == 1, let first = values[0] {
+            let normalized = min(max(first / maxValue, 0), 1)
+            let y = size.height - (CGFloat(normalized) * size.height)
+            var path = Path()
+            path.move(to: CGPoint(x: 0, y: y))
+            path.addLine(to: CGPoint(x: size.width, y: y))
+            return path
+        }
+
+        let stepX = size.width / CGFloat(max(values.count - 1, 1))
+        var path = Path()
+        var segmentOpen = false
+
+        for (idx, value) in values.enumerated() {
+            guard let value else {
+                segmentOpen = false
+                continue
+            }
+
+            let normalized = min(max(value / maxValue, 0), 1)
+            let x = CGFloat(idx) * stepX
+            let y = size.height - (CGFloat(normalized) * size.height)
+            let point = CGPoint(x: x, y: y)
+
+            if segmentOpen {
+                path.addLine(to: point)
+            } else {
+                path.move(to: point)
+                segmentOpen = true
+            }
+        }
+
+        return path
     }
 
     // MARK: - YAML Tab
