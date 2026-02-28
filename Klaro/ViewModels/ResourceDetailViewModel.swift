@@ -3,6 +3,48 @@ import SwiftkubeClient
 import SwiftkubeModel
 import Yams
 
+struct NodeMetricSummary: Sendable {
+    let cpuRequestedCores: Double
+    let cpuAllocatableCores: Double
+    let cpuCapacityCores: Double
+    let memoryRequestedGiB: Double
+    let memoryAllocatableGiB: Double
+    let memoryCapacityGiB: Double
+    let podCount: Int
+    let podAllocatable: Int
+    let podCapacity: Int
+}
+
+struct NodePropertyItem: Identifiable, Sendable {
+    let id: String
+    let key: String
+    let value: String
+}
+
+struct NodeResourceItem: Identifiable, Sendable {
+    let id: String
+    let name: String
+    let value: String
+}
+
+struct NodePodItem: Identifiable, Sendable {
+    let id: String
+    let name: String
+    let namespace: String
+    let ready: String
+    let cpu: String
+    let memory: String
+    let status: String
+}
+
+struct NodeOverview: Sendable {
+    let metrics: NodeMetricSummary
+    let properties: [NodePropertyItem]
+    let capacity: [NodeResourceItem]
+    let allocatable: [NodeResourceItem]
+    let pods: [NodePodItem]
+}
+
 @Observable
 @MainActor
 final class ResourceDetailViewModel {
@@ -20,6 +62,7 @@ final class ResourceDetailViewModel {
     var labels: [String: String] = [:]
     var annotations: [String: String] = [:]
     var events: [ResourceItem] = []
+    var nodeOverview: NodeOverview?
 
     private let kubernetesService: KubernetesService
 
@@ -36,6 +79,7 @@ final class ResourceDetailViewModel {
     func loadPodDetail(name: String, namespace: String) async {
         isLoading = true
         errorMessage = nil
+        nodeOverview = nil
         do {
             let pod = try await kubernetesService.get(core.v1.Pod.self, name: name, in: namespace)
             extractMetadata(from: pod)
@@ -57,6 +101,7 @@ final class ResourceDetailViewModel {
     func loadDeploymentDetail(name: String, namespace: String) async {
         isLoading = true
         errorMessage = nil
+        nodeOverview = nil
         do {
             let deployment = try await kubernetesService.get(apps.v1.Deployment.self, name: name, in: namespace)
             extractMetadata(from: deployment)
@@ -81,6 +126,7 @@ final class ResourceDetailViewModel {
     ) async {
         isLoading = true
         errorMessage = nil
+        nodeOverview = nil
         do {
             let resource = try await kubernetesService.get(type, name: name, in: namespace)
             extractMetadata(from: resource)
@@ -102,6 +148,7 @@ final class ResourceDetailViewModel {
     ) async {
         isLoading = true
         errorMessage = nil
+        nodeOverview = nil
         do {
             let resource = try await kubernetesService.getClusterScoped(type, name: name)
             extractMetadata(from: resource)
@@ -124,6 +171,7 @@ final class ResourceDetailViewModel {
     ) async {
         isLoading = true
         errorMessage = nil
+        nodeOverview = nil
         metadata = [:]
         labels = [:]
         annotations = [:]
@@ -146,6 +194,29 @@ final class ResourceDetailViewModel {
             errorMessage = error.localizedDescription
         }
 
+        isLoading = false
+    }
+
+    func loadNodeDetail(name: String) async {
+        isLoading = true
+        errorMessage = nil
+        nodeOverview = nil
+        do {
+            let node = try await kubernetesService.getClusterScoped(core.v1.Node.self, name: name)
+            extractMetadata(from: node)
+
+            do {
+                resourceYAML = try await kubernetesService.getYAML(node)
+            } catch {
+                resourceYAML = "# Error loading YAML: \(error.localizedDescription)"
+            }
+
+            let allPods = try await kubernetesService.list(core.v1.Pod.self, in: nil).items
+            nodeOverview = Self.extractNodeOverview(from: node, allPods: allPods)
+            await loadClusterScopedEvents(forResource: name, kind: "Node")
+        } catch {
+            errorMessage = error.localizedDescription
+        }
         isLoading = false
     }
 
@@ -175,6 +246,37 @@ final class ResourceDetailViewModel {
                         namespace: event.metadata?.namespace,
                         status: event.type ?? "Normal",
                         age: event.metadata?.creationTimestamp,
+                        labels: [:],
+                        annotations: [:],
+                        kind: .event,
+                        extraColumns: [
+                            "reason": event.reason ?? "",
+                            "message": event.message ?? "",
+                            "count": "\(event.count ?? 0)",
+                            "object": "\(event.involvedObject.kind ?? "")/\(event.involvedObject.name ?? "")"
+                        ]
+                    )
+                }
+        } catch {
+            // Events are best-effort
+        }
+    }
+
+    private func loadClusterScopedEvents(forResource name: String, kind: String) async {
+        do {
+            let eventList = try await kubernetesService.list(core.v1.Event.self, in: nil)
+            events = eventList.items
+                .filter { event in
+                    event.involvedObject.name == name &&
+                    (event.involvedObject.kind ?? "") == kind
+                }
+                .map { event in
+                    ResourceItem(
+                        id: "\(event.metadata?.namespace ?? "")/\(event.name ?? "")",
+                        name: event.name ?? "",
+                        namespace: event.metadata?.namespace,
+                        status: event.type ?? "Normal",
+                        age: event.lastTimestamp ?? event.metadata?.creationTimestamp,
                         labels: [:],
                         annotations: [:],
                         kind: .event,
@@ -259,6 +361,155 @@ final class ResourceDetailViewModel {
         }
         labels = metadataNode["labels"] as? [String: String] ?? [:]
         annotations = metadataNode["annotations"] as? [String: String] ?? [:]
+    }
+
+    private static func extractNodeOverview(from node: core.v1.Node, allPods: [core.v1.Pod]) -> NodeOverview {
+        let nodeName = node.name ?? ""
+        let nodePods = allPods.filter { $0.spec?.nodeName == nodeName }
+
+        let capacityMap: [String: String] = (node.status?.capacity ?? [:]).mapValues { $0.description }
+        let allocatableMap: [String: String] = (node.status?.allocatable ?? [:]).mapValues { $0.description }
+
+        let cpuCapacityCores = (capacityMap["cpu"] ?? "0").parseKubernetesCPU()
+        let cpuAllocatableCores = (allocatableMap["cpu"] ?? "0").parseKubernetesCPU()
+        let memoryCapacityGiB = (capacityMap["memory"] ?? "0").parseKubernetesMemoryGiB()
+        let memoryAllocatableGiB = (allocatableMap["memory"] ?? "0").parseKubernetesMemoryGiB()
+        let podCapacity = Int(capacityMap["pods"] ?? "0") ?? 0
+        let podAllocatable = Int(allocatableMap["pods"] ?? "0") ?? 0
+
+        var cpuRequestedCores = 0.0
+        var memoryRequestedGiB = 0.0
+
+        let podItems = nodePods
+            .map { pod -> NodePodItem in
+                let podName = pod.name ?? ""
+                let namespace = pod.metadata?.namespace ?? "-"
+                let readiness = PodStatusFormatter.readySummary(for: pod)
+                let ready = "\(readiness.ready)/\(readiness.total)"
+
+                var podCPU = 0.0
+                var podMemory = 0.0
+                for container in pod.spec?.containers ?? [] {
+                    if let cpuReq = container.resources?.requests?["cpu"]?.description {
+                        podCPU += cpuReq.parseKubernetesCPU()
+                    }
+                    if let memReq = container.resources?.requests?["memory"]?.description {
+                        podMemory += memReq.parseKubernetesMemoryGiB()
+                    }
+                }
+                cpuRequestedCores += podCPU
+                memoryRequestedGiB += podMemory
+
+                return NodePodItem(
+                    id: "\(namespace)/\(podName)",
+                    name: podName,
+                    namespace: namespace,
+                    ready: ready,
+                    cpu: formatCPU(podCPU),
+                    memory: formatMemoryGiB(podMemory),
+                    status: PodStatusFormatter.displayStatus(for: pod)
+                )
+            }
+            .sorted { lhs, rhs in
+                if lhs.namespace == rhs.namespace {
+                    return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+                }
+                return lhs.namespace.localizedCaseInsensitiveCompare(rhs.namespace) == .orderedAscending
+            }
+
+        let addresses = node.status?.addresses ?? []
+        let internalIP = addresses.first(where: { $0.type == "InternalIP" })?.address ?? "-"
+        let hostname = addresses.first(where: { $0.type == "Hostname" })?.address ?? "-"
+        let nodeInfo = node.status?.nodeInfo
+        let creationTimestamp = node.metadata?.creationTimestamp?.description ?? "-"
+        let labels = node.metadata?.labels ?? [:]
+        let annotations = node.metadata?.annotations ?? [:]
+        let readyCondition = node.status?.conditions?.first(where: { $0.type == "Ready" })
+        let conditionText: String = {
+            guard let readyCondition else { return "Unknown" }
+            return readyCondition.status == "True" ? "Ready" : "NotReady"
+        }()
+
+        let properties: [NodePropertyItem] = [
+            NodePropertyItem(id: "created", key: "Created", value: creationTimestamp),
+            NodePropertyItem(id: "name", key: "Name", value: nodeName),
+            NodePropertyItem(id: "labels", key: "Labels", value: "\(labels.count)"),
+            NodePropertyItem(id: "annotations", key: "Annotations", value: "\(annotations.count)"),
+            NodePropertyItem(id: "addresses", key: "Addresses", value: "InternalIP: \(internalIP) • Hostname: \(hostname)"),
+            NodePropertyItem(id: "os", key: "OS", value: nodeInfo?.operatingSystem ?? "-"),
+            NodePropertyItem(id: "osImage", key: "OS Image", value: nodeInfo?.osImage ?? "-"),
+            NodePropertyItem(id: "kernelVersion", key: "Kernel Version", value: nodeInfo?.kernelVersion ?? "-"),
+            NodePropertyItem(id: "containerRuntimeVersion", key: "Container Runtime", value: nodeInfo?.containerRuntimeVersion ?? "-"),
+            NodePropertyItem(id: "kubeletVersion", key: "Kubelet Version", value: nodeInfo?.kubeletVersion ?? "-"),
+            NodePropertyItem(id: "conditions", key: "Conditions", value: conditionText),
+        ]
+
+        return NodeOverview(
+            metrics: NodeMetricSummary(
+                cpuRequestedCores: cpuRequestedCores,
+                cpuAllocatableCores: cpuAllocatableCores,
+                cpuCapacityCores: cpuCapacityCores,
+                memoryRequestedGiB: memoryRequestedGiB,
+                memoryAllocatableGiB: memoryAllocatableGiB,
+                memoryCapacityGiB: memoryCapacityGiB,
+                podCount: nodePods.count,
+                podAllocatable: podAllocatable,
+                podCapacity: podCapacity
+            ),
+            properties: properties,
+            capacity: orderedNodeResources(from: capacityMap),
+            allocatable: orderedNodeResources(from: allocatableMap),
+            pods: podItems
+        )
+    }
+
+    private static func orderedNodeResources(from values: [String: String]) -> [NodeResourceItem] {
+        let preferredOrder = ["cpu", "memory", "ephemeral-storage", "hugepages-1Gi", "hugepages-2Mi", "pods"]
+        var ordered: [NodeResourceItem] = []
+        var consumed = Set<String>()
+
+        for key in preferredOrder {
+            if let value = values[key] {
+                ordered.append(NodeResourceItem(id: key, name: key, value: value))
+                consumed.insert(key)
+            }
+        }
+
+        let remainingKeys = values.keys
+            .filter { !consumed.contains($0) }
+            .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+
+        for key in remainingKeys {
+            ordered.append(NodeResourceItem(id: key, name: key, value: values[key] ?? "-"))
+        }
+
+        return ordered
+    }
+
+    private static func formatCPU(_ cores: Double) -> String {
+        guard cores > 0 else { return "-" }
+        if cores < 1 {
+            return "\(Int((cores * 1000).rounded()))m"
+        }
+        if abs(cores.rounded() - cores) < 0.001 {
+            return String(format: "%.0f", cores)
+        }
+        return String(format: "%.2f", cores)
+    }
+
+    private static func formatMemoryGiB(_ gib: Double) -> String {
+        guard gib > 0 else { return "-" }
+        if gib < 1 {
+            let mib = gib * 1024
+            if mib >= 10 {
+                return String(format: "%.0fMi", mib)
+            }
+            return String(format: "%.1fMi", mib)
+        }
+        if gib >= 10 {
+            return String(format: "%.1fGi", gib)
+        }
+        return String(format: "%.2fGi", gib)
     }
 
     // MARK: - YAML Cleanup

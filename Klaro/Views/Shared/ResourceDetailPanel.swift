@@ -155,7 +155,16 @@ struct ResourceDetailPanel: View {
 
     // MARK: - Overview Tab
 
+    @ViewBuilder
     private var overviewTab: some View {
+        if let nodeOverview = viewModel.nodeOverview {
+            nodeOverviewTab(nodeOverview)
+        } else {
+            genericOverviewTab
+        }
+    }
+
+    private var genericOverviewTab: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Dimensions.sectionSpacing) {
                 cardSection(title: "Metadata") {
@@ -177,6 +186,62 @@ struct ResourceDetailPanel: View {
                         ForEach(Array(viewModel.filteredAnnotations.sorted(by: { $0.key < $1.key })), id: \.key) { key, value in
                             detailRow(key: key, value: value)
                         }
+                    }
+                }
+            }
+            .padding(Theme.Dimensions.padding)
+        }
+    }
+
+    private func nodeOverviewTab(_ node: NodeOverview) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Theme.Dimensions.sectionSpacing) {
+                cardSection(title: "Metrics") {
+                    CapacityBar(
+                        label: "CPU Requests",
+                        used: node.metrics.cpuRequestedCores,
+                        total: max(node.metrics.cpuAllocatableCores, node.metrics.cpuCapacityCores),
+                        unit: "cores"
+                    )
+                    CapacityBar(
+                        label: "Memory Requests",
+                        used: node.metrics.memoryRequestedGiB,
+                        total: max(node.metrics.memoryAllocatableGiB, node.metrics.memoryCapacityGiB),
+                        unit: "GiB"
+                    )
+                    CapacityBar(
+                        label: "Pods",
+                        used: Double(node.metrics.podCount),
+                        total: Double(max(node.metrics.podAllocatable, node.metrics.podCapacity)),
+                        unit: ""
+                    )
+                }
+
+                cardSection(title: "Properties") {
+                    ForEach(node.properties) { item in
+                        detailRow(key: item.key, value: item.value)
+                    }
+                }
+
+                cardSection(title: "Capacity") {
+                    ForEach(node.capacity) { item in
+                        detailRow(key: item.name, value: item.value)
+                    }
+                }
+
+                cardSection(title: "Allocatable") {
+                    ForEach(node.allocatable) { item in
+                        detailRow(key: item.name, value: item.value)
+                    }
+                }
+
+                cardSection(title: "Pods") {
+                    if node.pods.isEmpty {
+                        Text("No pods scheduled on this node.")
+                            .font(Theme.Fonts.caption)
+                            .foregroundStyle(Theme.Colors.secondaryText)
+                    } else {
+                        nodePodsTable(node.pods)
                     }
                 }
             }
@@ -234,6 +299,65 @@ struct ResourceDetailPanel: View {
                 .foregroundStyle(.primary)
         }
         .textSelection(.enabled)
+    }
+
+    private func nodePodsTable(_ pods: [NodePodItem]) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: Theme.Dimensions.spacing) {
+                Text("Name")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text("Namespace")
+                    .frame(width: 110, alignment: .leading)
+                Text("Ready")
+                    .frame(width: 50, alignment: .leading)
+                Text("CPU")
+                    .frame(width: 60, alignment: .leading)
+                Text("Memory")
+                    .frame(width: 70, alignment: .leading)
+                Text("Status")
+                    .frame(width: 80, alignment: .leading)
+            }
+            .font(Theme.Fonts.tableHeader)
+            .foregroundStyle(Theme.Colors.secondaryText)
+            .padding(.vertical, Theme.Dimensions.smallSpacing)
+
+            Divider()
+
+            LazyVStack(spacing: 0) {
+                ForEach(pods) { pod in
+                    HStack(spacing: Theme.Dimensions.spacing) {
+                        Text(pod.name)
+                            .font(Theme.Fonts.tableCell)
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                        Text(pod.namespace)
+                            .font(Theme.Fonts.tableCell)
+                            .lineLimit(1)
+                            .frame(width: 110, alignment: .leading)
+
+                        Text(pod.ready)
+                            .font(Theme.Fonts.monoSmall)
+                            .frame(width: 50, alignment: .leading)
+
+                        Text(pod.cpu)
+                            .font(Theme.Fonts.monoSmall)
+                            .frame(width: 60, alignment: .leading)
+
+                        Text(pod.memory)
+                            .font(Theme.Fonts.monoSmall)
+                            .frame(width: 70, alignment: .leading)
+
+                        Text(pod.status)
+                            .font(Theme.Fonts.caption)
+                            .foregroundStyle(Theme.Colors.forStatus(pod.status))
+                            .frame(width: 80, alignment: .leading)
+                    }
+                    .padding(.vertical, 3)
+                    Divider()
+                }
+            }
+        }
     }
 
     // MARK: - YAML Tab

@@ -146,7 +146,7 @@ struct InspectorDetailView: View {
 
             // Cluster-scoped resources
             case .node:
-                await detail.loadClusterScopedDetail(core.v1.Node.self, name: name)
+                await detail.loadNodeDetail(name: name)
             case .persistentVolume:
                 await detail.loadClusterScopedDetail(core.v1.PersistentVolume.self, name: name)
             case .storageClass:
