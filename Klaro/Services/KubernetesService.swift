@@ -108,6 +108,12 @@ struct NodeSummaryMetricsSample: Sendable {
     let diskCapacityGiB: Double?
 }
 
+struct PodUsageMetricsSample: Sendable {
+    let id: String
+    let cpuUsageCores: Double
+    let memoryUsageBytes: Double
+}
+
 // MARK: - KubernetesService
 
 /// A facade actor that wraps a KubernetesClient instance and provides
@@ -497,6 +503,52 @@ actor KubernetesService {
             diskUsageGiB: diskUsedGiB,
             diskCapacityGiB: diskCapacityGiB
         )
+    }
+
+    func fetchPodUsageMetrics(namespace: String?) async throws -> [String: PodUsageMetricsSample] {
+        let rawPath: String
+        if let namespace, !namespace.isEmpty {
+            rawPath = "/apis/metrics.k8s.io/v1beta1/namespaces/\(namespace)/pods"
+        } else {
+            rawPath = "/apis/metrics.k8s.io/v1beta1/pods"
+        }
+
+        let output = try executeKubectl(arguments: ["get", "--raw", rawPath, "--request-timeout=3s"])
+
+        guard let jsonData = output.stdout.data(using: .utf8),
+              let root = try JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+              let items = root["items"] as? [[String: Any]] else {
+            throw KubernetesServiceError.operationFailed("Failed to decode pod metrics output.")
+        }
+
+        var result: [String: PodUsageMetricsSample] = [:]
+
+        for item in items {
+            guard let metadata = item["metadata"] as? [String: Any],
+                  let name = metadata["name"] as? String else {
+                continue
+            }
+
+            let podNamespace = (metadata["namespace"] as? String) ?? namespace ?? ""
+            let id = "\(podNamespace)/\(name)"
+            let containers = item["containers"] as? [[String: Any]] ?? []
+
+            var cpuCores = 0.0
+            var memoryBytes = 0.0
+            for container in containers {
+                guard let usage = container["usage"] as? [String: Any] else { continue }
+                cpuCores += (usage["cpu"] as? String ?? "0").parseKubernetesCPU()
+                memoryBytes += (usage["memory"] as? String ?? "0").parseKubernetesMemory()
+            }
+
+            result[id] = PodUsageMetricsSample(
+                id: id,
+                cpuUsageCores: cpuCores,
+                memoryUsageBytes: memoryBytes
+            )
+        }
+
+        return result
     }
 
     // MARK: - Create / Update Operations

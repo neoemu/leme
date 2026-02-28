@@ -146,6 +146,9 @@ final class ResourceListViewModel {
     private var liveWatchContext: LiveWatchContext?
     private var watchReloadAction: (@MainActor () async -> Void)?
     private var isPerformingLiveReload = false
+    private var podUsageMetricsCache: [String: PodUsageMetricsSample] = [:]
+    private var podUsageMetricsFetchedAt: Date?
+    private var podUsageMetricsNamespaceKey: String?
 
     var filteredResources: [ResourceItem] {
         var result = resources
@@ -281,9 +284,34 @@ final class ResourceListViewModel {
         errorMessage = nil
         do {
             let service = KubernetesService(client: client)
-            let podList = try await service.list(core.v1.Pod.self, in: namespace)
+            let namespaceKey = namespace ?? "*all*"
+            let isSameNamespace = podUsageMetricsNamespaceKey == namespaceKey
+            let cacheAge = podUsageMetricsFetchedAt.map { Date().timeIntervalSince($0) } ?? .infinity
+            let shouldRefreshMetrics = showLoading || !isSameNamespace || cacheAge > 8
+
+            let podList: core.v1.PodList
+            let usageByPodID: [String: PodUsageMetricsSample]
+
+            if shouldRefreshMetrics {
+                async let podListTask = service.list(core.v1.Pod.self, in: namespace)
+                async let usageTask: [String: PodUsageMetricsSample]? = try? service.fetchPodUsageMetrics(namespace: namespace)
+                podList = try await podListTask
+
+                if let freshUsage = await usageTask {
+                    usageByPodID = freshUsage
+                    podUsageMetricsCache = freshUsage
+                    podUsageMetricsFetchedAt = Date()
+                    podUsageMetricsNamespaceKey = namespaceKey
+                } else {
+                    usageByPodID = (isSameNamespace ? podUsageMetricsCache : [:])
+                }
+            } else {
+                podList = try await service.list(core.v1.Pod.self, in: namespace)
+                usageByPodID = podUsageMetricsCache
+            }
+
             resources = podList.items.map { pod in
-                podToResourceItem(pod)
+                podToResourceItem(pod, usageMetrics: usageByPodID)
             }
         } catch {
             errorMessage = error.localizedDescription
@@ -798,10 +826,17 @@ final class ResourceListViewModel {
 
     // MARK: - Resource Mappers
 
-    private nonisolated func podToResourceItem(_ pod: core.v1.Pod) -> ResourceItem {
+    private nonisolated func podToResourceItem(
+        _ pod: core.v1.Pod,
+        usageMetrics: [String: PodUsageMetricsSample]
+    ) -> ResourceItem {
         let restarts = PodStatusFormatter.restartCount(for: pod)
         let readiness = PodStatusFormatter.readySummary(for: pod)
         let status = PodStatusFormatter.displayStatus(for: pod)
+        let namespace = pod.metadata?.namespace
+        let name = pod.name ?? ""
+        let resourceID = "\(namespace ?? "")/\(name)"
+        let metric = usageMetrics[resourceID]
 
         var extra: [String: String] = [:]
         extra["ready"] = "\(readiness.ready)/\(readiness.total)"
@@ -809,11 +844,16 @@ final class ResourceListViewModel {
         extra["node"] = pod.spec?.nodeName ?? ""
         extra["ip"] = pod.status?.podIP ?? ""
         extra["container"] = pod.spec?.containers.first?.name ?? ""
+        extra["cpu"] = metric.map { Self.formatCPUUsage($0.cpuUsageCores) } ?? "-"
+        extra["memory"] = metric.map { Self.formatMemoryUsage(bytes: $0.memoryUsageBytes) } ?? "-"
+        extra["containers"] = "\(readiness.ready)/\(readiness.total)"
+        extra["containerReady"] = "\(readiness.ready)"
+        extra["containerTotal"] = "\(readiness.total)"
 
         return ResourceItem(
-            id: "\(pod.metadata?.namespace ?? "")/\(pod.name ?? "")",
-            name: pod.name ?? "",
-            namespace: pod.metadata?.namespace,
+            id: resourceID,
+            name: name,
+            namespace: namespace,
             status: status,
             age: pod.metadata?.creationTimestamp,
             labels: pod.metadata?.labels ?? [:],
@@ -821,6 +861,31 @@ final class ResourceListViewModel {
             kind: .pod,
             extraColumns: extra
         )
+    }
+
+    private nonisolated static func formatCPUUsage(_ cores: Double) -> String {
+        String(format: "%.3f", cores)
+    }
+
+    private nonisolated static func formatMemoryUsage(bytes: Double) -> String {
+        guard bytes > 0 else { return "0B" }
+
+        let gib = bytes / (1024 * 1024 * 1024)
+        if gib >= 1 {
+            return String(format: "%.1fGiB", gib)
+        }
+
+        let mib = bytes / (1024 * 1024)
+        if mib >= 1 {
+            return String(format: "%.1fMiB", mib)
+        }
+
+        let kib = bytes / 1024
+        if kib >= 1 {
+            return String(format: "%.1fKiB", kib)
+        }
+
+        return String(format: "%.0fB", bytes)
     }
 
     private nonisolated func deploymentToResourceItem(_ deploy: apps.v1.Deployment) -> ResourceItem {
