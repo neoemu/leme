@@ -29,6 +29,25 @@ Use Swift 6 conventions already present in the repo:
 
 Prefer strict concurrency-safe design: actor services for async stateful work, `@MainActor` view models for UI updates.
 
+## UI Consistency Contract (Do Not Regress)
+Keep navigation + table interactions consistent with the current Rancher-like implementation.
+
+- Resource lists must use `ResourceTableView` (avoid introducing new direct `Table` list screens).
+- Row behavior contract:
+  - single-click anywhere on row selects the row
+  - double-click anywhere on row opens Details (right inspector)
+  - right-click/context menu and `...` actions must expose the same available actions
+- Selection styling contract:
+  - use `Theme.Colors.tableSelectionBackground` for selected rows
+  - do not use stronger custom blue selection only for `More Resources`
+- Sidebar click targets:
+  - section headers are full-row clickable (not only chevron)
+  - items are full-row clickable (not only text)
+- For custom resources (`More Resources` / CRDs), preserve the shared behavior by keeping
+  `SelectedCustomResourceListView` aligned with `ResourceTableView`.
+
+If changing these areas, validate against `docs/ui-consistency.md`.
+
 ## Testing Guidelines
 Write unit tests with Swift Testing (`import Testing`, `@Test`, `#expect`) in `KlaroTests/`. Keep UI flow checks in `KlaroUITests/` using `XCTest`.
 
