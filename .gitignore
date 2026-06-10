@@ -20,7 +20,6 @@ xcuserdata/
 .swiftpm/
 .build/
 Packages/
-Package.resolved
 
 # Backup files
 *.bak
