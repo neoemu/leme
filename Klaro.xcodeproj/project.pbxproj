@@ -11,6 +11,7 @@
 		046B8FDBD03C4CC2BA84547A /* ClusterManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB85376BBCFAABB821772ACC /* ClusterManager.swift */; };
 		04B1C0361E299F7E15AFB16C /* DaemonSetListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5B98556AB2E7201A320F54A /* DaemonSetListView.swift */; };
 		06B5786863D6F59519269186 /* NetworkPolicyListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5885F1E716352933E31AA70B /* NetworkPolicyListView.swift */; };
+		09D838A67105C163A00E1E4C /* GlobalSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCF7BFDEF963A85714C20DF9 /* GlobalSearchView.swift */; };
 		0D38C7EC643FE56ED058488D /* StatusBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = B279D795393EEC25B531B69A /* StatusBadge.swift */; };
 		10F99191F6DA0EAABC627CA5 /* KeyboardShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BAB52F8DE2AD85375F017D0 /* KeyboardShortcuts.swift */; };
 		1419638027608FFE9118B2CC /* ServiceAccountListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B739605E129B91103638A40 /* ServiceAccountListView.swift */; };
@@ -32,6 +33,7 @@
 		371653F1E59A3492031F4A8E /* SecretListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B99BCC99CCBABDBDBFC73C6 /* SecretListView.swift */; };
 		38ADD7687E10C3D44A941C2D /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B56FB03B6822D99EC59D81B9 /* SettingsView.swift */; };
 		39843B0CED6B2D974A4B8A47 /* ServiceListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BE56E3029F9BDF65D3D9FDC /* ServiceListView.swift */; };
+		3AAA5644008572DF4303B1A6 /* GlobalSearchViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC04DCB829FC531C4B21B43 /* GlobalSearchViewModel.swift */; };
 		3E55F2C8CFBF2FC4B90FFCFC /* ClusterConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 081C539B73F507BE4FC463A6 /* ClusterConnection.swift */; };
 		41792B556004D4F17782E7D8 /* AppCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E713A2705FDBFD63A5D09E0 /* AppCommands.swift */; };
 		42FB3775431228EED7FF4BBD /* LabelBadgeList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CBE551EF94504FE22A9D30A /* LabelBadgeList.swift */; };
@@ -141,6 +143,7 @@
 		450B8457971C95902DAFC7BA /* ClusterSwitcherView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClusterSwitcherView.swift; sourceTree = "<group>"; };
 		489D6D801DEABA8BDEA173CA /* ResourceKind.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResourceKind.swift; sourceTree = "<group>"; };
 		4B739605E129B91103638A40 /* ServiceAccountListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceAccountListView.swift; sourceTree = "<group>"; };
+		4EC04DCB829FC531C4B21B43 /* GlobalSearchViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalSearchViewModel.swift; sourceTree = "<group>"; };
 		4FA047A319183FC7FD8758D5 /* UUID+Stable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UUID+Stable.swift"; sourceTree = "<group>"; };
 		515CC9E8E7F4BA6BA45BD296 /* ClusterRoleListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClusterRoleListView.swift; sourceTree = "<group>"; };
 		5243F82F3C8E61894DA2CCAF /* DeploymentDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeploymentDetailView.swift; sourceTree = "<group>"; };
@@ -200,6 +203,7 @@
 		ED7C61DF1CBD0675E686E2B6 /* YAMLEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YAMLEditorView.swift; sourceTree = "<group>"; };
 		F32551EBE4ACD09B5FAD8C3B /* KlaroApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KlaroApp.swift; sourceTree = "<group>"; };
 		F7D3AC4DB90F3440AE29D692 /* LogViewerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogViewerView.swift; sourceTree = "<group>"; };
+		FCF7BFDEF963A85714C20DF9 /* GlobalSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalSearchView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -392,6 +396,7 @@
 				D06D982F1414C38249A2CC1E /* CommandPaletteView.swift */,
 				2480FF10E4F5D5E708E99E64 /* CountBadge.swift */,
 				9D90EA29923E963F31614E96 /* EmptyStateView.swift */,
+				FCF7BFDEF963A85714C20DF9 /* GlobalSearchView.swift */,
 				898270F3BD1CB0682FA6104C /* InfoPill.swift */,
 				5CBE551EF94504FE22A9D30A /* LabelBadgeList.swift */,
 				F7D3AC4DB90F3440AE29D692 /* LogViewerView.swift */,
@@ -439,6 +444,7 @@
 				7FC739DF4B63586DF7A0148E /* ClusterDashboardViewModel.swift */,
 				7D10616A01CFE17BC8B6EA25 /* ClusterViewModel.swift */,
 				250E5280FACCF9F3AA5181FB /* CommandPaletteViewModel.swift */,
+				4EC04DCB829FC531C4B21B43 /* GlobalSearchViewModel.swift */,
 				7C93A2EF69638DF57E2F27EB /* PodLogsViewModel.swift */,
 				8354B23CBE82F439FFEB5F34 /* ResourceDetailViewModel.swift */,
 				54BA1CDE786B63D234999E55 /* ResourceListViewModel.swift */,
@@ -657,6 +663,8 @@
 				F6DE3D671760FEB6AE64514B /* EndpointListView.swift in Sources */,
 				23344B37BFA862151ECFDAF2 /* EventListView.swift in Sources */,
 				2988F6C4D0A7812F9D2DC117 /* ExecService.swift in Sources */,
+				09D838A67105C163A00E1E4C /* GlobalSearchView.swift in Sources */,
+				3AAA5644008572DF4303B1A6 /* GlobalSearchViewModel.swift in Sources */,
 				EE4862D1AE436866BE7DE023 /* InfoPill.swift in Sources */,
 				E1FC37C5106338F805CCC794 /* IngressListView.swift in Sources */,
 				FC2DEBABA2896A5031B5A3E2 /* InspectorDetailView.swift in Sources */,

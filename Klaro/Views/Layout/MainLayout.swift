@@ -133,7 +133,14 @@ struct MainLayout: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.95)))
             }
         }
+        .overlay {
+            if appState.isGlobalSearchOpen {
+                GlobalSearchView()
+                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+            }
+        }
         .animation(.easeInOut(duration: 0.15), value: appState.isCommandPaletteOpen)
+        .animation(.easeInOut(duration: 0.15), value: appState.isGlobalSearchOpen)
     }
 }
 

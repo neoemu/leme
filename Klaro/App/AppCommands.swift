@@ -10,6 +10,11 @@ struct AppCommands: Commands {
             }
             .keyboardShortcut(KeyboardShortcuts.commandPalette, modifiers: [.command, .shift])
 
+            Button("Search Resources") {
+                appState.isGlobalSearchOpen.toggle()
+            }
+            .keyboardShortcut(KeyboardShortcuts.search, modifiers: [.command])
+
             Divider()
 
             Button("More Resources") {
