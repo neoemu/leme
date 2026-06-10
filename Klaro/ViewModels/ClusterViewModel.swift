@@ -9,17 +9,19 @@ final class ClusterViewModel {
     var serverVersion: String?
 
     private let clusterManager: ClusterManager
+    private let settings: SettingsStore
     private var kubeconfigWatcher: KubeconfigWatcher?
 
-    init(clusterManager: ClusterManager) {
+    init(clusterManager: ClusterManager, settings: SettingsStore) {
         self.clusterManager = clusterManager
+        self.settings = settings
     }
 
     func loadContexts(appState: AppState) async {
         isLoading = true
         errorMessage = nil
         do {
-            let connections = try await clusterManager.loadContexts()
+            let connections = try await clusterManager.loadContexts(from: settings.kubeconfigPath)
             appState.clusters = connections
         } catch {
             errorMessage = error.localizedDescription
@@ -27,12 +29,27 @@ final class ClusterViewModel {
         isLoading = false
     }
 
+    /// Tears down current state and reloads everything from the (possibly
+    /// changed) kubeconfig path in settings.
+    func applyKubeconfigPathChange(appState: AppState) async {
+        kubeconfigWatcher?.stop()
+        kubeconfigWatcher = nil
+
+        await clusterManager.disconnectAll()
+        await clusterManager.invalidateCache()
+        appState.activeClusterID = nil
+        appState.clusters = []
+
+        await loadContexts(appState: appState)
+        startKubeconfigWatcher(appState: appState)
+    }
+
     /// Starts watching the kubeconfig file; edits trigger a context reload
     /// that preserves the runtime state of clusters that still exist.
     func startKubeconfigWatcher(appState: AppState) {
         guard kubeconfigWatcher == nil else { return }
 
-        let watcher = KubeconfigWatcher { [weak self, weak appState] in
+        let watcher = KubeconfigWatcher(path: settings.kubeconfigPath) { [weak self, weak appState] in
             Task { @MainActor in
                 guard let self, let appState else { return }
                 await self.reloadContexts(appState: appState)
@@ -45,7 +62,7 @@ final class ClusterViewModel {
     func reloadContexts(appState: AppState) async {
         await clusterManager.invalidateCache()
         do {
-            let fresh = try await clusterManager.loadContexts()
+            let fresh = try await clusterManager.loadContexts(from: settings.kubeconfigPath)
             let existingByID = Dictionary(uniqueKeysWithValues: appState.clusters.map { ($0.id, $0) })
 
             appState.clusters = fresh.map { connection in
@@ -74,7 +91,10 @@ final class ClusterViewModel {
         appState.updateCluster(updating)
 
         do {
-            let connected = try await clusterManager.connect(connection: cluster)
+            let connected = try await clusterManager.connect(
+                connection: cluster,
+                kubeConfigPath: settings.kubeconfigPath
+            )
             appState.updateCluster(connected)
         } catch let error as ClusterManagerError {
             // Another attempt is already running; let it finish and keep its state.

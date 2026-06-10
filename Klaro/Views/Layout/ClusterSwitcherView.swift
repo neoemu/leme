@@ -5,6 +5,7 @@ import SwiftUI
 struct ClusterSwitcherView: View {
     @Environment(AppState.self) private var appState
     @Environment(ClusterViewModel.self) private var clusterViewModel
+    @Environment(SettingsStore.self) private var settingsStore
 
     @State private var isPopoverPresented = false
     @State private var isHovered = false
@@ -25,7 +26,7 @@ struct ClusterSwitcherView: View {
                             .truncationMode(.middle)
 
                         HStack(spacing: Theme.Dimensions.smallSpacing) {
-                            if let environment = cluster.environment {
+                            if let environment = settingsStore.environment(for: cluster) {
                                 ClusterEnvironmentBadge(environment: environment)
                             }
                             if let version = cluster.serverVersion {
@@ -103,6 +104,7 @@ struct ClusterSwitcherView: View {
 private struct ClusterSwitcherPopover: View {
     @Environment(AppState.self) private var appState
     @Environment(ClusterViewModel.self) private var clusterViewModel
+    @Environment(SettingsStore.self) private var settingsStore
 
     @Binding var isPresented: Bool
     @State private var searchText = ""
@@ -143,6 +145,7 @@ private struct ClusterSwitcherPopover: View {
                         ForEach(filteredClusters) { cluster in
                             ClusterSwitcherRow(
                                 cluster: cluster,
+                                environment: settingsStore.environment(for: cluster),
                                 isActive: cluster.id == appState.activeClusterID,
                                 action: {
                                     select(cluster)
@@ -182,6 +185,42 @@ private struct ClusterSwitcherPopover: View {
 
     @ViewBuilder
     private func contextMenuItems(for cluster: ClusterConnection) -> some View {
+        Menu("Environment") {
+            Button {
+                settingsStore.clearEnvironmentOverride(forContext: cluster.contextName)
+            } label: {
+                let detected = ClusterEnvironment.detect(from: cluster.displayName)
+                Text("Automatic (\(detected?.rawValue ?? "none"))")
+                if !settingsStore.hasOverride(forContext: cluster.contextName) {
+                    Image(systemName: "checkmark")
+                }
+            }
+
+            Divider()
+
+            ForEach([ClusterEnvironment.production, .staging, .development, .test], id: \.self) { env in
+                Button {
+                    settingsStore.setEnvironmentOverride(env, forContext: cluster.contextName)
+                } label: {
+                    Text(env.rawValue)
+                    if settingsStore.environmentOverrides[cluster.contextName] == env.rawValue {
+                        Image(systemName: "checkmark")
+                    }
+                }
+            }
+
+            Button {
+                settingsStore.setEnvironmentOverride(nil, forContext: cluster.contextName)
+            } label: {
+                Text("None")
+                if settingsStore.environmentOverrides[cluster.contextName] == SettingsStore.noEnvironmentSentinel {
+                    Image(systemName: "checkmark")
+                }
+            }
+        }
+
+        Divider()
+
         if cluster.status == .connected {
             Button("Disconnect") {
                 Task {
@@ -207,6 +246,7 @@ private struct ClusterSwitcherPopover: View {
 
 private struct ClusterSwitcherRow: View {
     let cluster: ClusterConnection
+    let environment: ClusterEnvironment?
     let isActive: Bool
     let action: () -> Void
     var onDisconnect: (() -> Void)?
@@ -234,7 +274,7 @@ private struct ClusterSwitcherRow: View {
 
             Spacer(minLength: Theme.Dimensions.smallSpacing)
 
-            if let environment = cluster.environment {
+            if let environment {
                 ClusterEnvironmentBadge(environment: environment)
             }
 

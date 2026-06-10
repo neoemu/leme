@@ -30,11 +30,15 @@ struct KlaroApp: App {
     @State private var appState = AppState()
     @State private var clusterViewModel: ClusterViewModel
     @State private var portForwardManager: PortForwardManager
+    @State private var settingsStore: SettingsStore
 
     init() {
+        let settings = SettingsStore()
+        _settingsStore = State(initialValue: settings)
+
         let manager = ClusterManager()
         KlaroAppDelegate.clusterManager = manager
-        _clusterViewModel = State(initialValue: ClusterViewModel(clusterManager: manager))
+        _clusterViewModel = State(initialValue: ClusterViewModel(clusterManager: manager, settings: settings))
 
         let forwards = PortForwardManager()
         KlaroAppDelegate.portForwardManager = forwards
@@ -51,6 +55,7 @@ struct KlaroApp: App {
                 .environment(appState)
                 .environment(clusterViewModel)
                 .environment(portForwardManager)
+                .environment(settingsStore)
                 .task {
                     await clusterViewModel.loadContexts(appState: appState)
                     clusterViewModel.startKubeconfigWatcher(appState: appState)
@@ -66,6 +71,9 @@ struct KlaroApp: App {
 
         Settings {
             SettingsView()
+                .environment(appState)
+                .environment(clusterViewModel)
+                .environment(settingsStore)
         }
     }
 }

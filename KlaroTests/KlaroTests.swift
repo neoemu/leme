@@ -26,6 +26,16 @@ import Testing
     #expect(uuid.split(separator: "-")[2].first == "5")
 }
 
+@Test func environmentOverrideResolution() {
+    // Override wins over detection
+    #expect(SettingsStore.resolveEnvironment(override: "STG", detectedFrom: "g4-prod") == .staging)
+    // Sentinel removes the badge even when detection would find one
+    #expect(SettingsStore.resolveEnvironment(override: "none", detectedFrom: "g4-prod") == nil)
+    // No override falls back to detection
+    #expect(SettingsStore.resolveEnvironment(override: nil, detectedFrom: "g4-prod") == .production)
+    #expect(SettingsStore.resolveEnvironment(override: nil, detectedFrom: "plain-cluster") == nil)
+}
+
 @Test func clusterEnvironmentDetection() {
     #expect(ClusterEnvironment.detect(from: "g4-prod-east") == .production)
     #expect(ClusterEnvironment.detect(from: "g4-staging") == .staging)

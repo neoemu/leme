@@ -544,12 +544,20 @@ final class ResourceListViewModel {
 
     /// Rare full-list resync as a safety net for events missed across watch
     /// reconnections. The heavy lifting is done by the incremental watch.
+    /// Interval is user-configurable in Settings (0 disables the resync).
     private func startFallbackResync() {
         fallbackResyncTask?.cancel()
         fallbackResyncTask = Task { [weak self] in
             guard let self else { return }
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: UInt64(Constants.resourceRefreshInterval * 1_000_000_000))
+                let configured = UserDefaults.standard.object(forKey: SettingsStore.autoRefreshIntervalKey) as? Double
+                let interval = configured ?? Constants.resourceRefreshInterval
+                guard interval > 0 else {
+                    // Disabled; re-check once a minute in case the user re-enables it.
+                    try? await Task.sleep(nanoseconds: 60_000_000_000)
+                    continue
+                }
+                try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
                 guard !Task.isCancelled else { break }
                 await self.performResyncIfNeeded()
             }
