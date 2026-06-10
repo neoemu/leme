@@ -107,7 +107,11 @@ struct PodListView: View {
     private func loadPods() async {
         do {
             guard let client = try await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
-            await viewModel.loadPods(client: client, namespace: appState.selectedNamespace)
+            await viewModel.loadPods(
+                client: client,
+                namespace: appState.selectedNamespace,
+                contextName: appState.activeCluster?.contextName
+            )
         } catch {
             viewModel.errorMessage = error.localizedDescription
         }
@@ -122,7 +126,7 @@ struct PodListView: View {
 
         do {
             guard let client = try await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
-            let detail = ResourceDetailViewModel(client: client)
+            let detail = ResourceDetailViewModel(client: client, contextName: appState.activeCluster?.contextName)
             detailViewModel = detail
             await detail.loadPodDetail(name: name, namespace: namespace)
         } catch {

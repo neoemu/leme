@@ -107,8 +107,8 @@ final class ResourceDetailViewModel {
         let txBytes: Double
     }
 
-    init(client: KubernetesClient) {
-        self.kubernetesService = KubernetesService(client: client)
+    init(client: KubernetesClient, contextName: String? = nil) {
+        self.kubernetesService = KubernetesService(client: client, contextName: contextName)
     }
 
     var filteredAnnotations: [String: String] {

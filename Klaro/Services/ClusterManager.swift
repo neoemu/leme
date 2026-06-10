@@ -13,6 +13,8 @@ enum ClusterManagerError: LocalizedError, Sendable {
     case userNotFound(String)
     case clientCreationFailed(String)
     case notConnected(String)
+    case connectionTimedOut(context: String, seconds: TimeInterval)
+    case connectionInProgress(String)
 
     var errorDescription: String? {
         switch self {
@@ -30,6 +32,10 @@ enum ClusterManagerError: LocalizedError, Sendable {
             return "Failed to create Kubernetes client: \(detail)"
         case .notConnected(let context):
             return "Not connected to cluster context '\(context)'"
+        case .connectionTimedOut(let context, let seconds):
+            return "Connection to '\(context)' timed out after \(Int(seconds))s. Check VPN/network and cluster availability."
+        case .connectionInProgress(let context):
+            return "A connection attempt for '\(context)' is already in progress"
         }
     }
 }
@@ -68,6 +74,7 @@ actor ClusterManager {
     // MARK: - Properties
 
     private var activeClients: [UUID: KubernetesClient] = [:]
+    private var connectingIDs: Set<UUID> = []
     private var cachedKubeConfig: KubeConfig?
 
     // MARK: - Kubeconfig Loading
@@ -162,6 +169,7 @@ actor ClusterManager {
         return data.contexts.map { context in
             let cluster = clustersByName[context.clusterName]
             return ClusterConnection(
+                id: UUID(stableFrom: context.name),
                 contextName: context.name,
                 clusterName: context.clusterName,
                 clusterURL: cluster?.server ?? "",
@@ -201,6 +209,15 @@ actor ClusterManager {
         connection: ClusterConnection,
         kubeConfigPath: String = Constants.defaultKubeconfigPath
     ) async throws -> ClusterConnection {
+        // Reject concurrent attempts for the same cluster: overlapping connects
+        // would overwrite each other's clients in activeClients, deallocating
+        // a KubernetesClient that was never shut down (crashes in debug).
+        guard !connectingIDs.contains(connection.id) else {
+            throw ClusterManagerError.connectionInProgress(connection.contextName)
+        }
+        connectingIDs.insert(connection.id)
+        defer { connectingIDs.remove(connection.id) }
+
         var updated = connection
         updated.status = .connecting
 
@@ -227,11 +244,32 @@ actor ClusterManager {
                 )
             }
 
-            // Store the client
+            // Fetch namespaces as a connectivity probe, bounded by a timeout so
+            // unreachable clusters don't hang in "connecting" indefinitely.
+            let namespaceList: core.v1.NamespaceList
+            do {
+                namespaceList = try await Self.withTimeout(
+                    seconds: Constants.clusterConnectTimeout,
+                    onTimeout: ClusterManagerError.connectionTimedOut(
+                        context: connection.contextName,
+                        seconds: Constants.clusterConnectTimeout
+                    )
+                ) {
+                    try await client.namespaces.list()
+                }
+            } catch {
+                try? await client.shutdown()
+                throw error
+            }
+
+            // Store the client only after the probe succeeds. Shut down any
+            // previous client for this cluster before replacing it — silently
+            // dropping the reference would deallocate it without shutdown.
+            if let previous = activeClients.removeValue(forKey: connection.id) {
+                try? await previous.shutdown()
+            }
             activeClients[connection.id] = client
 
-            // Fetch namespaces
-            let namespaceList = try await client.namespaces.list()
             let namespaces = namespaceList.items.compactMap { $0.name }
 
             updated.namespaces = namespaces.sorted()
@@ -291,5 +329,27 @@ actor ClusterManager {
     /// Invalidates the cached kubeconfig, forcing a reload on next use.
     func invalidateCache() {
         cachedKubeConfig = nil
+    }
+
+    /// Races an async operation against a deadline, throwing `onTimeout` if it loses.
+    private static func withTimeout<T: Sendable>(
+        seconds: TimeInterval,
+        onTimeout: ClusterManagerError,
+        operation: @escaping @Sendable () async throws -> T
+    ) async throws -> T {
+        try await withThrowingTaskGroup(of: T.self) { group in
+            group.addTask {
+                try await operation()
+            }
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                throw onTimeout
+            }
+            guard let result = try await group.next() else {
+                throw onTimeout
+            }
+            group.cancelAll()
+            return result
+        }
     }
 }

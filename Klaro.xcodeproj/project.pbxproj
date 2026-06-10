@@ -17,6 +17,7 @@
 		17769640F7DD92A045FC43CC /* PVCListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D7E37F4CDB2983CF8F88605 /* PVCListView.swift */; };
 		23344B37BFA862151ECFDAF2 /* EventListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 005602B260B288C64379A46F /* EventListView.swift */; };
 		23BBAB8C8DC66D29B27E516E /* RoleListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE80C5EA9ABDDC5FFFFAB3C6 /* RoleListView.swift */; };
+		24B91869CF52E21E9E0D7713 /* UUID+Stable.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FA047A319183FC7FD8758D5 /* UUID+Stable.swift */; };
 		25BE2FD3A7FE485C43F52BE1 /* CodeEditor in Frameworks */ = {isa = PBXBuildFile; productRef = 67428439A2850C0C9FF54AB4 /* CodeEditor */; };
 		26F2112B67E38745E46053DF /* ResourceKind.swift in Sources */ = {isa = PBXBuildFile; fileRef = 489D6D801DEABA8BDEA173CA /* ResourceKind.swift */; };
 		2988F6C4D0A7812F9D2DC117 /* ExecService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5466252AE0DB6AD9415B8039 /* ExecService.swift */; };
@@ -78,6 +79,7 @@
 		E0D9FB260391E9C6BDEDDA46 /* AgeLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F267A3D222C2E036ABA07C0 /* AgeLabel.swift */; };
 		E1FC37C5106338F805CCC794 /* IngressListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D600C301CE69DE3206C95A /* IngressListView.swift */; };
 		E3F15F90D35BDFDBDC9312CC /* ResourceDetailViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8354B23CBE82F439FFEB5F34 /* ResourceDetailViewModel.swift */; };
+		E8F79726A54F9AA67792C1BE /* KubeconfigWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA45744F7D29C8CF1DA6B907 /* KubeconfigWatcher.swift */; };
 		E9008F451686127418B5785A /* CountBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2480FF10E4F5D5E708E99E64 /* CountBadge.swift */; };
 		E9C8A30843ED0D669394DC39 /* ResourceDetailPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 998AB0A6AAEF283E7C5BB999 /* ResourceDetailPanel.swift */; };
 		EE4862D1AE436866BE7DE023 /* InfoPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = 898270F3BD1CB0682FA6104C /* InfoPill.swift */; };
@@ -136,6 +138,7 @@
 		450B8457971C95902DAFC7BA /* ClusterSwitcherView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClusterSwitcherView.swift; sourceTree = "<group>"; };
 		489D6D801DEABA8BDEA173CA /* ResourceKind.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResourceKind.swift; sourceTree = "<group>"; };
 		4B739605E129B91103638A40 /* ServiceAccountListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceAccountListView.swift; sourceTree = "<group>"; };
+		4FA047A319183FC7FD8758D5 /* UUID+Stable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UUID+Stable.swift"; sourceTree = "<group>"; };
 		515CC9E8E7F4BA6BA45BD296 /* ClusterRoleListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClusterRoleListView.swift; sourceTree = "<group>"; };
 		5243F82F3C8E61894DA2CCAF /* DeploymentDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeploymentDetailView.swift; sourceTree = "<group>"; };
 		52498A481DB3EF4FE5DD47B3 /* Klaro.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Klaro.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -177,6 +180,7 @@
 		B2A9E6185CB222B146867F5A /* Quantity+Parsing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Quantity+Parsing.swift"; sourceTree = "<group>"; };
 		B56FB03B6822D99EC59D81B9 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		B6F5D0789ED78B3A27B06129 /* StorageClassListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageClassListView.swift; sourceTree = "<group>"; };
+		BA45744F7D29C8CF1DA6B907 /* KubeconfigWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KubeconfigWatcher.swift; sourceTree = "<group>"; };
 		CBB9954C98141BAAEAA37862 /* BottomPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomPanelView.swift; sourceTree = "<group>"; };
 		CE85CE982D0E2AFAC9101877 /* KlaroUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KlaroUITests.swift; sourceTree = "<group>"; };
 		D06D982F1414C38249A2CC1E /* CommandPaletteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandPaletteView.swift; sourceTree = "<group>"; };
@@ -302,6 +306,7 @@
 			children = (
 				EB85376BBCFAABB821772ACC /* ClusterManager.swift */,
 				5466252AE0DB6AD9415B8039 /* ExecService.swift */,
+				BA45744F7D29C8CF1DA6B907 /* KubeconfigWatcher.swift */,
 				ABDFF55C6B6C2AF8C0A9DE9A /* KubernetesService.swift */,
 				5C6A80AB1BF018CA02D34CA8 /* LogStreamService.swift */,
 				714692D8F205046CF077FB76 /* MetricsService.swift */,
@@ -452,6 +457,7 @@
 				265964CFFF97490822C6A21A /* Color+Theme.swift */,
 				1EF0B0DB14F2B0E8BD5E8FA3 /* Date+RelativeTime.swift */,
 				B2A9E6185CB222B146867F5A /* Quantity+Parsing.swift */,
+				4FA047A319183FC7FD8758D5 /* UUID+Stable.swift */,
 			);
 			path = Extensions;
 			sourceTree = "<group>";
@@ -651,6 +657,7 @@
 				9CBFB1CC02E303C2D32A69BA /* JobListView.swift in Sources */,
 				10F99191F6DA0EAABC627CA5 /* KeyboardShortcuts.swift in Sources */,
 				F6C5B408F88D1E51645C0A23 /* KlaroApp.swift in Sources */,
+				E8F79726A54F9AA67792C1BE /* KubeconfigWatcher.swift in Sources */,
 				91B750F4C7746BA7EC4B3D98 /* KubernetesService.swift in Sources */,
 				42FB3775431228EED7FF4BBD /* LabelBadgeList.swift in Sources */,
 				8EABBE167F17718A88B67843 /* LogStreamService.swift in Sources */,
@@ -687,6 +694,7 @@
 				7E3731C5815FFDF7D7BE486B /* TerminalContainerView.swift in Sources */,
 				2C6CF683D46A4AD06CF880FA /* TerminalViewModel.swift in Sources */,
 				77616AAAFCA50BC66FC3B163 /* Theme.swift in Sources */,
+				24B91869CF52E21E9E0D7713 /* UUID+Stable.swift in Sources */,
 				D7B16A1102DAC24335C4AAB7 /* UnifiedWorkloadsView.swift in Sources */,
 				F1CB6CAECDBD4405BF8EA4C2 /* YAMLEditorView.swift in Sources */,
 			);

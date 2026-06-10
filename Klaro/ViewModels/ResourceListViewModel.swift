@@ -210,10 +210,10 @@ final class ResourceListViewModel {
 
     // MARK: - Pod Loading
 
-    func loadPods(client: KubernetesClient, namespace: String?) async {
-        await loadPodsSnapshot(client: client, namespace: namespace, showLoading: true)
+    func loadPods(client: KubernetesClient, namespace: String?, contextName: String? = nil) async {
+        await loadPodsSnapshot(client: client, namespace: namespace, contextName: contextName, showLoading: true)
         configureLiveWatch(kind: .pod, client: client, namespace: namespace) { [weak self] in
-            await self?.loadPodsSnapshot(client: client, namespace: namespace, showLoading: false)
+            await self?.loadPodsSnapshot(client: client, namespace: namespace, contextName: contextName, showLoading: false)
         }
     }
 
@@ -277,13 +277,13 @@ final class ResourceListViewModel {
         }
     }
 
-    private func loadPodsSnapshot(client: KubernetesClient, namespace: String?, showLoading: Bool) async {
+    private func loadPodsSnapshot(client: KubernetesClient, namespace: String?, contextName: String?, showLoading: Bool) async {
         if showLoading {
             isLoading = true
         }
         errorMessage = nil
         do {
-            let service = KubernetesService(client: client)
+            let service = KubernetesService(client: client, contextName: contextName)
             let namespaceKey = namespace ?? "*all*"
             let isSameNamespace = podUsageMetricsNamespaceKey == namespaceKey
             let cacheAge = podUsageMetricsFetchedAt.map { Date().timeIntervalSince($0) } ?? .infinity

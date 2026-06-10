@@ -105,7 +105,7 @@ struct DeploymentListView: View {
 
         do {
             guard let client = try await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
-            let detail = ResourceDetailViewModel(client: client)
+            let detail = ResourceDetailViewModel(client: client, contextName: appState.activeCluster?.contextName)
             detailViewModel = detail
             await detail.loadDeploymentDetail(name: name, namespace: namespace)
         } catch {

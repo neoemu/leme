@@ -18,6 +18,14 @@ import Testing
     #expect(conn2.initials == "PE")
 }
 
+@Test func stableUUIDDerivation() {
+    #expect(UUID(stableFrom: "ctx-a") == UUID(stableFrom: "ctx-a"))
+    #expect(UUID(stableFrom: "ctx-a") != UUID(stableFrom: "ctx-b"))
+    // Well-formed RFC 4122 variant: version nibble 5, variant bits 10xx
+    let uuid = UUID(stableFrom: "ctx-a").uuidString
+    #expect(uuid.split(separator: "-")[2].first == "5")
+}
+
 @Test func clusterEnvironmentDetection() {
     #expect(ClusterEnvironment.detect(from: "g4-prod-east") == .production)
     #expect(ClusterEnvironment.detect(from: "g4-staging") == .staging)

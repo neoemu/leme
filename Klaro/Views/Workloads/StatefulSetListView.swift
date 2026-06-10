@@ -110,7 +110,7 @@ struct StatefulSetListView: View {
 
         do {
             guard let client = try await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
-            let detail = ResourceDetailViewModel(client: client)
+            let detail = ResourceDetailViewModel(client: client, contextName: appState.activeCluster?.contextName)
             detailViewModel = detail
             await detail.loadDetail(apps.v1.StatefulSet.self, name: name, namespace: namespace)
         } catch {

@@ -55,7 +55,7 @@ struct InspectorDetailView: View {
 
             do {
                 guard let client = try await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
-                let detail = ResourceDetailViewModel(client: client)
+                let detail = ResourceDetailViewModel(client: client, contextName: appState.activeCluster?.contextName)
                 detailViewModel = detail
                 await detail.loadCustomResourceDetail(
                     definition: target.definitionInfo,
@@ -84,7 +84,7 @@ struct InspectorDetailView: View {
 
         do {
             guard let client = try await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
-            let detail = ResourceDetailViewModel(client: client)
+            let detail = ResourceDetailViewModel(client: client, contextName: appState.activeCluster?.contextName)
             detailViewModel = detail
 
             switch appState.selectedResourceKind {

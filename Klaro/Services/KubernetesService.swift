@@ -149,11 +149,13 @@ actor KubernetesService {
     ]
 
     private let client: KubernetesClient
+    private let contextName: String?
 
     // MARK: - Initialization
 
-    init(client: KubernetesClient) {
+    init(client: KubernetesClient, contextName: String? = nil) {
         self.client = client
+        self.contextName = contextName
     }
 
     // MARK: - Namespaced List Operations
@@ -260,7 +262,7 @@ actor KubernetesService {
             arguments.append(contentsOf: ["--context", context])
         }
 
-        let output = try executeKubectl(arguments: arguments)
+        let output = try await executeKubectl(arguments: arguments)
         guard let jsonData = output.stdout.data(using: .utf8) else {
             throw KubernetesServiceError.operationFailed("Failed to decode CRD list output.")
         }
@@ -332,7 +334,7 @@ actor KubernetesService {
 
         arguments.append(contentsOf: ["-o", "json"])
 
-        let output = try executeKubectl(arguments: arguments)
+        let output = try await executeKubectl(arguments: arguments)
         guard let jsonData = output.stdout.data(using: .utf8) else {
             throw KubernetesServiceError.operationFailed("Failed to decode custom resource list output.")
         }
@@ -388,7 +390,7 @@ actor KubernetesService {
         }
         arguments.append(contentsOf: ["-o", "yaml"])
 
-        let output = try executeKubectl(arguments: arguments)
+        let output = try await executeKubectl(arguments: arguments)
         return output.stdout
     }
 
@@ -406,7 +408,7 @@ actor KubernetesService {
             arguments.append(contentsOf: ["--context", context])
         }
 
-        _ = try executeKubectl(arguments: arguments)
+        _ = try await executeKubectl(arguments: arguments)
     }
 
     func hasAnyCustomResourceInstances(
@@ -426,7 +428,7 @@ actor KubernetesService {
             arguments.append(contentsOf: ["--context", context])
         }
 
-        let output = try executeKubectl(arguments: arguments)
+        let output = try await executeKubectl(arguments: arguments)
         guard let jsonData = output.stdout.data(using: .utf8) else {
             return false
         }
@@ -441,7 +443,7 @@ actor KubernetesService {
 
     func fetchNodeUsageMetrics(name: String) async throws -> NodeUsageMetricsSample {
         let rawPath = "/apis/metrics.k8s.io/v1beta1/nodes/\(name)"
-        let output = try executeKubectl(arguments: ["get", "--raw", rawPath, "--request-timeout=3s"])
+        let output = try await executeKubectl(arguments: ["get", "--raw", rawPath, "--request-timeout=3s"])
 
         guard let jsonData = output.stdout.data(using: .utf8),
               let root = try JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
@@ -471,7 +473,7 @@ actor KubernetesService {
 
     func fetchNodeSummaryMetrics(name: String) async throws -> NodeSummaryMetricsSample {
         let rawPath = "/api/v1/nodes/\(name)/proxy/stats/summary"
-        let output = try executeKubectl(arguments: ["get", "--raw", rawPath, "--request-timeout=3s"])
+        let output = try await executeKubectl(arguments: ["get", "--raw", rawPath, "--request-timeout=3s"])
 
         guard let jsonData = output.stdout.data(using: .utf8),
               let root = try JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
@@ -513,7 +515,7 @@ actor KubernetesService {
             rawPath = "/apis/metrics.k8s.io/v1beta1/pods"
         }
 
-        let output = try executeKubectl(arguments: ["get", "--raw", rawPath, "--request-timeout=3s"])
+        let output = try await executeKubectl(arguments: ["get", "--raw", rawPath, "--request-timeout=3s"])
 
         guard let jsonData = output.stdout.data(using: .utf8),
               let root = try JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
@@ -644,7 +646,7 @@ actor KubernetesService {
             if let requestNamespace = patchRequest.namespace, !requestNamespace.isEmpty {
                 patchArguments.append(contentsOf: ["-n", requestNamespace])
             }
-            let output = try executeKubectl(arguments: patchArguments, stdin: patchRequest.targetManifestYAML)
+            let output = try await executeKubectl(arguments: patchArguments, stdin: patchRequest.targetManifestYAML)
             return ApplyResult(
                 mode: .patch,
                 stdout: output.stdout,
@@ -661,7 +663,7 @@ actor KubernetesService {
             applyArguments.append(contentsOf: ["-n", namespace])
         }
         applyArguments.append(contentsOf: ["-f", "-"])
-        let output = try executeKubectl(arguments: applyArguments, stdin: sanitizedManifest)
+        let output = try await executeKubectl(arguments: applyArguments, stdin: sanitizedManifest)
         return ApplyResult(
             mode: .apply,
             stdout: output.stdout,
@@ -674,8 +676,15 @@ actor KubernetesService {
         let stderr: String
     }
 
-    private func executeKubectl(arguments: [String], stdin: String? = nil) throws -> KubectlCommandOutput {
+    private func executeKubectl(arguments: [String], stdin: String? = nil) async throws -> KubectlCommandOutput {
         let kubectlPath = try findKubectl()
+
+        // Always target the cluster this service was created for, unless the
+        // caller already provided an explicit context.
+        var arguments = arguments
+        if let contextName, !contextName.isEmpty, !arguments.contains("--context") {
+            arguments.append(contentsOf: ["--context", contextName])
+        }
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: kubectlPath)
@@ -715,31 +724,37 @@ actor KubernetesService {
         }
         process.environment = environment
 
-        do {
-            try process.run()
-        } catch {
-            throw KubernetesOperationError(
-                category: .connectivity,
-                detail: "Failed to start kubectl: \(error.localizedDescription)"
-            )
-        }
+        let terminationStatus: Int32 = try await withCheckedThrowingContinuation { continuation in
+            process.terminationHandler = { finished in
+                continuation.resume(returning: finished.terminationStatus)
+            }
 
-        if let stdin, let inputData = stdin.data(using: .utf8) {
-            stdinPipe.fileHandleForWriting.write(inputData)
-        }
-        try? stdinPipe.fileHandleForWriting.close()
+            do {
+                try process.run()
+            } catch {
+                process.terminationHandler = nil
+                continuation.resume(throwing: KubernetesOperationError(
+                    category: .connectivity,
+                    detail: "Failed to start kubectl: \(error.localizedDescription)"
+                ))
+                return
+            }
 
-        process.waitUntilExit()
+            if let stdin, let inputData = stdin.data(using: .utf8) {
+                stdinPipe.fileHandleForWriting.write(inputData)
+            }
+            try? stdinPipe.fileHandleForWriting.close()
+        }
 
         let stdoutData = (try? Data(contentsOf: stdoutURL)) ?? Data()
         let stderrData = (try? Data(contentsOf: stderrURL)) ?? Data()
         let stdout = String(data: stdoutData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let stderr = String(data: stderrData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
-        guard process.terminationStatus == 0 else {
+        guard terminationStatus == 0 else {
             let detail = stderr.isEmpty ? stdout : stderr
             let message = detail.isEmpty
-                ? "kubectl command failed with exit code \(process.terminationStatus)"
+                ? "kubectl command failed with exit code \(terminationStatus)"
                 : detail
 
             throw KubernetesOperationError(

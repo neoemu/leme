@@ -3,6 +3,7 @@ import Foundation
 enum Constants {
     static let appName = "Klaro"
     static let defaultKubeconfigPath = "~/.kube/config"
+    static let clusterConnectTimeout: TimeInterval = 10.0
     static let watchReconnectBaseDelay: TimeInterval = 1.0
     static let watchReconnectMaxDelay: TimeInterval = 30.0
     static let logBufferMaxLines = 10_000
