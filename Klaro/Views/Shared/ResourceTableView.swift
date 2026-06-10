@@ -43,6 +43,7 @@ struct ResourceRowAction: Identifiable {
 
 struct ResourceTableView: View {
     @Environment(AppState.self) private var appState
+    @Environment(SettingsStore.self) private var settingsStore
     let columns: [ResourceTableColumn]
     @Bindable var viewModel: ResourceListViewModel
     var onViewLogs: ((ResourceItem) -> Void)?
@@ -81,6 +82,13 @@ struct ResourceTableView: View {
     // Extra action confirmation
     @State private var pendingConfirmAction: ResourceRowAction?
     @State private var showActionConfirmation = false
+
+    // Production type-to-confirm
+    @State private var dangerAction: PendingDangerAction?
+
+    private var isProductionCluster: Bool {
+        settingsStore.isProduction(appState.activeCluster)
+    }
 
     /// Width of the fixed actions column ("..." button).
     private let actionsColumnWidth: CGFloat = 36
@@ -163,6 +171,14 @@ struct ResourceTableView: View {
             }
         } message: {
             Text(pendingConfirmAction?.confirmationMessage ?? "")
+        }
+        .sheet(item: $dangerAction) { action in
+            DangerConfirmationSheet(
+                action: action,
+                clusterName: appState.activeCluster?.displayName ?? ""
+            ) {
+                dangerAction = nil
+            }
         }
         .sheet(item: $resourceToScale) { resource in
             ScaleSheetView(
@@ -756,8 +772,19 @@ struct ResourceTableView: View {
 
         if onRestart != nil {
             Button {
-                resourceToRestart = resource
-                showRestartConfirmation = true
+                if isProductionCluster {
+                    dangerAction = PendingDangerAction(
+                        title: "Restart \(resource.name)",
+                        message: "This triggers a rolling restart of all pods of \(resource.name) on a production cluster.",
+                        confirmText: resource.name,
+                        confirmLabel: "Restart"
+                    ) {
+                        onRestart?(resource)
+                    }
+                } else {
+                    resourceToRestart = resource
+                    showRestartConfirmation = true
+                }
             } label: {
                 Label("Restart", systemImage: "arrow.clockwise")
             }
@@ -767,7 +794,15 @@ struct ResourceTableView: View {
             let actions = extraActions(resource)
             ForEach(actions) { action in
                 Button(role: action.isDestructive ? .destructive : nil) {
-                    if action.needsConfirmation {
+                    if action.needsConfirmation && action.isDestructive && isProductionCluster {
+                        dangerAction = PendingDangerAction(
+                            title: action.title.trimmingCharacters(in: CharacterSet(charactersIn: "…")),
+                            message: action.confirmationMessage,
+                            confirmText: resource.name,
+                            confirmLabel: "Confirm",
+                            handler: action.handler
+                        )
+                    } else if action.needsConfirmation {
                         pendingConfirmAction = action
                         showActionConfirmation = true
                     } else {
@@ -807,8 +842,20 @@ struct ResourceTableView: View {
         // --- Destructive actions ---
         if onDelete != nil {
             Button(role: .destructive) {
-                resourceToDelete = resource
-                showDeleteConfirmation = true
+                if isProductionCluster {
+                    dangerAction = PendingDangerAction(
+                        title: "Delete \(resource.name)",
+                        message: deleteConfirmationMessageBuilder?(resource)
+                            ?? "This permanently deletes \(resource.kind.rawValue) \(resource.name) from a production cluster.",
+                        confirmText: resource.name,
+                        confirmLabel: "Delete"
+                    ) {
+                        onDelete?(resource)
+                    }
+                } else {
+                    resourceToDelete = resource
+                    showDeleteConfirmation = true
+                }
             } label: {
                 Label("Delete", systemImage: "trash")
             }

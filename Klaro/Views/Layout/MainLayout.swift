@@ -5,7 +5,27 @@ struct MainLayout: View {
     @Environment(AppState.self) private var appState
     @Environment(ClusterViewModel.self) private var clusterViewModel
     @Environment(PortForwardManager.self) private var portForwardManager
+    @Environment(SettingsStore.self) private var settingsStore
     @State private var isPortForwardPopoverPresented = false
+
+    private var isProductionCluster: Bool {
+        settingsStore.isProduction(appState.activeCluster)
+    }
+
+    private var productionBanner: some View {
+        HStack(spacing: Theme.Dimensions.smallSpacing) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 10, weight: .bold))
+            Text("PRODUCTION — \(appState.activeCluster?.displayName ?? "")")
+                .font(.system(size: 10, weight: .bold))
+                .tracking(0.5)
+            Spacer()
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, Theme.Dimensions.padding)
+        .padding(.vertical, 3)
+        .background(Theme.Colors.failed.opacity(0.85))
+    }
 
     var body: some View {
         @Bindable var appState = appState
@@ -14,6 +34,10 @@ struct MainLayout: View {
             SidebarView()
         } detail: {
             VStack(spacing: 0) {
+                if isProductionCluster {
+                    productionBanner
+                }
+
                 ContentAreaView()
 
                 if appState.isBottomPanelOpen {
