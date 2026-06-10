@@ -361,24 +361,23 @@ struct UnifiedWorkloadsView: View {
             viewModel.liveWatchStatus = .syncing
         }
 
-        let watchedKinds: [ResourceKind] = [
-            .pod,
-            .deployment,
-            .statefulSet,
-            .daemonSet,
-            .job,
-            .cronJob,
-            .replicaSet,
+        let watchStreams: [AsyncStream<MappedWatchEvent>] = await [
+            watcher.watchMapped(core.v1.Pod.self, kind: .pod, in: namespace, mapper: ResourceWatcher.signalMapper(kind: .pod)),
+            watcher.watchMapped(apps.v1.Deployment.self, kind: .deployment, in: namespace, mapper: ResourceWatcher.signalMapper(kind: .deployment)),
+            watcher.watchMapped(apps.v1.StatefulSet.self, kind: .statefulSet, in: namespace, mapper: ResourceWatcher.signalMapper(kind: .statefulSet)),
+            watcher.watchMapped(apps.v1.DaemonSet.self, kind: .daemonSet, in: namespace, mapper: ResourceWatcher.signalMapper(kind: .daemonSet)),
+            watcher.watchMapped(batch.v1.Job.self, kind: .job, in: namespace, mapper: ResourceWatcher.signalMapper(kind: .job)),
+            watcher.watchMapped(batch.v1.CronJob.self, kind: .cronJob, in: namespace, mapper: ResourceWatcher.signalMapper(kind: .cronJob)),
+            watcher.watchMapped(apps.v1.ReplicaSet.self, kind: .replicaSet, in: namespace, mapper: ResourceWatcher.signalMapper(kind: .replicaSet)),
         ]
 
-        for kind in watchedKinds {
+        for stream in watchStreams {
             let task = Task {
-                let stream = await watcher.watch(kind: kind, in: namespace)
                 for await event in stream {
                     guard !Task.isCancelled else { break }
                     await MainActor.run {
-                        if event.type == .error {
-                            viewModel.liveWatchStatus = .recovering(lastEventAt: nil, reason: event.resourceName)
+                        if case .error(let reason) = event.change {
+                            viewModel.liveWatchStatus = .recovering(lastEventAt: nil, reason: reason)
                             return
                         }
                         viewModel.liveWatchStatus = .live(lastEventAt: Date())
@@ -391,7 +390,7 @@ struct UnifiedWorkloadsView: View {
 
         periodicRefreshTask = Task {
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                try? await Task.sleep(nanoseconds: UInt64(Constants.resourceRefreshInterval * 1_000_000_000))
                 guard !Task.isCancelled else { break }
                 await loadAllWorkloads(showLoading: false)
             }

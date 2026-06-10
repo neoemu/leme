@@ -241,29 +241,46 @@ struct NodeListView: View {
             viewModel.liveWatchStatus = .syncing
         }
 
-        for kind in [ResourceKind.node, .pod] {
-            let task = Task {
-                let stream = await watcher.watch(kind: kind, in: nil)
-                for await event in stream {
-                    guard !Task.isCancelled else { break }
-                    await MainActor.run {
-                        if event.type == .error {
-                            viewModel.liveWatchStatus = .recovering(lastEventAt: nil, reason: event.resourceName)
-                            return
-                        }
-                        viewModel.liveWatchStatus = .live(lastEventAt: Date())
-                        scheduleLiveReload()
-                    }
-                }
-            }
-            nodeWatchTasks.append(task)
+        let nodeTask = Task {
+            let stream = await watcher.watchMappedClusterScoped(
+                core.v1.Node.self,
+                kind: .node,
+                mapper: ResourceWatcher.signalMapper(kind: .node)
+            )
+            await consumeWatchSignals(stream)
         }
+        nodeWatchTasks.append(nodeTask)
+
+        let podTask = Task {
+            let stream = await watcher.watchMapped(
+                core.v1.Pod.self,
+                kind: .pod,
+                in: nil,
+                mapper: ResourceWatcher.signalMapper(kind: .pod)
+            )
+            await consumeWatchSignals(stream)
+        }
+        nodeWatchTasks.append(podTask)
 
         periodicRefreshTask = Task {
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                try? await Task.sleep(nanoseconds: UInt64(Constants.resourceRefreshInterval * 1_000_000_000))
                 guard !Task.isCancelled else { break }
                 await loadData(showLoading: false)
+            }
+        }
+    }
+
+    private func consumeWatchSignals(_ stream: AsyncStream<MappedWatchEvent>) async {
+        for await event in stream {
+            guard !Task.isCancelled else { break }
+            await MainActor.run {
+                if case .error(let reason) = event.change {
+                    viewModel.liveWatchStatus = .recovering(lastEventAt: nil, reason: reason)
+                    return
+                }
+                viewModel.liveWatchStatus = .live(lastEventAt: Date())
+                scheduleLiveReload()
             }
         }
     }

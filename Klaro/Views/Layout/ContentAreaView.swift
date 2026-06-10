@@ -234,7 +234,7 @@ private struct SidebarPlaceholderView: View {
     }
 }
 
-private struct NamespacedResourceTableView<R: KubernetesAPIResource & NamespacedResource & ListableResource>: View where R.List.Item == R {
+private struct NamespacedResourceTableView<R: KubernetesAPIResource & NamespacedResource & ListableResource & ReadableResource>: View where R.List.Item == R {
     @Environment(AppState.self) private var appState
     @Environment(ClusterViewModel.self) private var clusterViewModel
     @State private var viewModel = ResourceListViewModel()

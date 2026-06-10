@@ -70,6 +70,9 @@ struct ResourceItem: Identifiable, Sendable, Hashable {
     let annotations: [String: String]
     let kind: ResourceKind
     var extraColumns: [String: String] = [:]
+    // Numeric usage values backing the CPU/Memory sortable columns
+    var cpuCores: Double?
+    var memoryBytes: Double?
 }
 
 enum SortField: String, Sendable {
@@ -77,6 +80,8 @@ enum SortField: String, Sendable {
     case namespace
     case status
     case age
+    case cpu
+    case memory
 }
 
 enum SortOrder: Sendable {
@@ -132,20 +137,18 @@ final class ResourceListViewModel {
     var operationState: ResourceOperationState = .idle
     var liveWatchStatus: LiveWatchStatus = .off
 
-    private static let liveReloadDebounceNanoseconds: UInt64 = 250_000_000
-    private static let livePollingIntervalNanoseconds: UInt64 = 1_500_000_000
     private static let watchHealthPollIntervalNanoseconds: UInt64 = 1_000_000_000
-    private static let watchStaleThreshold: TimeInterval = 12
+    private static let podMetricsRefreshIntervalNanoseconds: UInt64 = 10_000_000_000
 
     private var watcher: ResourceWatcher?
     private var watchTask: Task<Void, Never>?
-    private var watchDebounceTask: Task<Void, Never>?
-    private var watchPollingTask: Task<Void, Never>?
+    private var fallbackResyncTask: Task<Void, Never>?
     private var watchHealthTask: Task<Void, Never>?
+    private var podMetricsTask: Task<Void, Never>?
     private var operationResetTask: Task<Void, Never>?
     private var liveWatchContext: LiveWatchContext?
-    private var watchReloadAction: (@MainActor () async -> Void)?
-    private var isPerformingLiveReload = false
+    private var resyncAction: (@MainActor () async -> Void)?
+    private var isPerformingResync = false
     private var podUsageMetricsCache: [String: PodUsageMetricsSample] = [:]
     private var podUsageMetricsFetchedAt: Date?
     private var podUsageMetricsNamespaceKey: String?
@@ -171,6 +174,11 @@ final class ResourceListViewModel {
                 cmp = a.status.localizedCaseInsensitiveCompare(b.status) == .orderedAscending
             case .age:
                 cmp = (a.age ?? .distantPast) > (b.age ?? .distantPast)
+            case .cpu:
+                // First click surfaces the biggest consumers (like age: newest first)
+                cmp = (a.cpuCores ?? -1) > (b.cpuCores ?? -1)
+            case .memory:
+                cmp = (a.memoryBytes ?? -1) > (b.memoryBytes ?? -1)
             }
             return sortOrder == .ascending ? cmp : !cmp
         }
@@ -212,23 +220,38 @@ final class ResourceListViewModel {
 
     func loadPods(client: KubernetesClient, namespace: String?, contextName: String? = nil) async {
         await loadPodsSnapshot(client: client, namespace: namespace, contextName: contextName, showLoading: true)
-        configureLiveWatch(kind: .pod, client: client, namespace: namespace) { [weak self] in
-            await self?.loadPodsSnapshot(client: client, namespace: namespace, contextName: contextName, showLoading: false)
-        }
+        configureLiveWatch(
+            core.v1.Pod.self,
+            kind: .pod,
+            client: client,
+            namespace: namespace,
+            mapper: { Self.basePodItem($0) },
+            onResync: { [weak self] in
+                await self?.loadPodsSnapshot(client: client, namespace: namespace, contextName: contextName, showLoading: false)
+            }
+        )
+        startPodMetricsRefresh(client: client, namespace: namespace, contextName: contextName)
     }
 
     // MARK: - Deployment Loading
 
     func loadDeployments(client: KubernetesClient, namespace: String?) async {
         await loadDeploymentsSnapshot(client: client, namespace: namespace, showLoading: true)
-        configureLiveWatch(kind: .deployment, client: client, namespace: namespace) { [weak self] in
-            await self?.loadDeploymentsSnapshot(client: client, namespace: namespace, showLoading: false)
-        }
+        configureLiveWatch(
+            apps.v1.Deployment.self,
+            kind: .deployment,
+            client: client,
+            namespace: namespace,
+            mapper: { Self.deploymentItem($0) },
+            onResync: { [weak self] in
+                await self?.loadDeploymentsSnapshot(client: client, namespace: namespace, showLoading: false)
+            }
+        )
     }
 
     // MARK: - Generic Namespaced Loading
 
-    func loadNamespacedResources<R: KubernetesAPIResource & NamespacedResource & ListableResource>(
+    func loadNamespacedResources<R: KubernetesAPIResource & NamespacedResource & ListableResource & ReadableResource>(
         _ type: R.Type,
         kind: ResourceKind,
         client: KubernetesClient,
@@ -242,20 +265,27 @@ final class ResourceListViewModel {
             mapper: mapper,
             showLoading: true
         )
-        configureLiveWatch(kind: kind, client: client, namespace: namespace) { [weak self] in
-            await self?.loadNamespacedResourcesSnapshot(
-                type,
-                client: client,
-                namespace: namespace,
-                mapper: mapper,
-                showLoading: false
-            )
-        }
+        configureLiveWatch(
+            type,
+            kind: kind,
+            client: client,
+            namespace: namespace,
+            mapper: mapper,
+            onResync: { [weak self] in
+                await self?.loadNamespacedResourcesSnapshot(
+                    type,
+                    client: client,
+                    namespace: namespace,
+                    mapper: mapper,
+                    showLoading: false
+                )
+            }
+        )
     }
 
     // MARK: - Generic Cluster-Scoped Loading
 
-    func loadClusterScopedResources<R: KubernetesAPIResource & ClusterScopedResource & ListableResource>(
+    func loadClusterScopedResources<R: KubernetesAPIResource & ClusterScopedResource & ListableResource & ReadableResource>(
         _ type: R.Type,
         kind: ResourceKind,
         client: KubernetesClient,
@@ -267,14 +297,20 @@ final class ResourceListViewModel {
             mapper: mapper,
             showLoading: true
         )
-        configureLiveWatch(kind: kind, client: client, namespace: nil) { [weak self] in
-            await self?.loadClusterScopedResourcesSnapshot(
-                type,
-                client: client,
-                mapper: mapper,
-                showLoading: false
-            )
-        }
+        configureLiveWatchClusterScoped(
+            type,
+            kind: kind,
+            client: client,
+            mapper: mapper,
+            onResync: { [weak self] in
+                await self?.loadClusterScopedResourcesSnapshot(
+                    type,
+                    client: client,
+                    mapper: mapper,
+                    showLoading: false
+                )
+            }
+        )
     }
 
     private func loadPodsSnapshot(client: KubernetesClient, namespace: String?, contextName: String?, showLoading: Bool) async {
@@ -310,9 +346,7 @@ final class ResourceListViewModel {
                 usageByPodID = podUsageMetricsCache
             }
 
-            resources = podList.items.map { pod in
-                podToResourceItem(pod, usageMetrics: usageByPodID)
-            }
+            resources = podList.items.map { Self.podItem($0, usageMetrics: usageByPodID) }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -330,7 +364,7 @@ final class ResourceListViewModel {
             let service = KubernetesService(client: client)
             let list = try await service.list(apps.v1.Deployment.self, in: namespace)
             resources = list.items.map { deploy in
-                deploymentToResourceItem(deploy)
+                Self.deploymentItem(deploy)
             }
         } catch {
             errorMessage = error.localizedDescription
@@ -387,11 +421,13 @@ final class ResourceListViewModel {
 
     // MARK: - Watch
 
-    private func configureLiveWatch(
+    private func configureLiveWatch<R: KubernetesAPIResource & NamespacedResource & ReadableResource>(
+        _ type: R.Type,
         kind: ResourceKind,
         client: KubernetesClient,
         namespace: String?,
-        onReload: @escaping @MainActor () async -> Void
+        mapper: @escaping @Sendable (R) -> ResourceItem,
+        onResync: @escaping @MainActor () async -> Void
     ) {
         let context = LiveWatchContext(
             kind: kind,
@@ -400,39 +436,77 @@ final class ResourceListViewModel {
         )
 
         if liveWatchContext == context {
-            watchReloadAction = onReload
+            resyncAction = onResync
             return
         }
 
         stopWatch()
 
         liveWatchContext = context
-        watchReloadAction = onReload
+        resyncAction = onResync
         liveWatchStatus = .syncing
         let watcher = ResourceWatcher(client: client)
         self.watcher = watcher
 
         watchTask = Task { [weak self] in
-            let stream = await watcher.watch(kind: kind, in: namespace)
+            let stream = await watcher.watchMapped(type, kind: kind, in: namespace, mapper: mapper)
             for await event in stream {
                 guard !Task.isCancelled else { break }
-                await self?.handleWatchEvent(event)
+                await self?.handleWatchChange(event)
             }
         }
 
-        startLivePolling()
+        startFallbackResync()
+        startWatchHealthPolling(for: kind)
+    }
+
+    private func configureLiveWatchClusterScoped<R: KubernetesAPIResource & ClusterScopedResource & ReadableResource>(
+        _ type: R.Type,
+        kind: ResourceKind,
+        client: KubernetesClient,
+        mapper: @escaping @Sendable (R) -> ResourceItem,
+        onResync: @escaping @MainActor () async -> Void
+    ) {
+        let context = LiveWatchContext(
+            kind: kind,
+            namespace: nil,
+            clientIdentity: ObjectIdentifier(client)
+        )
+
+        if liveWatchContext == context {
+            resyncAction = onResync
+            return
+        }
+
+        stopWatch()
+
+        liveWatchContext = context
+        resyncAction = onResync
+        liveWatchStatus = .syncing
+        let watcher = ResourceWatcher(client: client)
+        self.watcher = watcher
+
+        watchTask = Task { [weak self] in
+            let stream = await watcher.watchMappedClusterScoped(type, kind: kind, mapper: mapper)
+            for await event in stream {
+                guard !Task.isCancelled else { break }
+                await self?.handleWatchChange(event)
+            }
+        }
+
+        startFallbackResync()
         startWatchHealthPolling(for: kind)
     }
 
     func stopWatch() {
         watchTask?.cancel()
         watchTask = nil
-        watchDebounceTask?.cancel()
-        watchDebounceTask = nil
-        watchPollingTask?.cancel()
-        watchPollingTask = nil
+        fallbackResyncTask?.cancel()
+        fallbackResyncTask = nil
         watchHealthTask?.cancel()
         watchHealthTask = nil
+        podMetricsTask?.cancel()
+        podMetricsTask = nil
 
         if let watcher {
             Task {
@@ -441,40 +515,43 @@ final class ResourceListViewModel {
         }
         watcher = nil
         liveWatchContext = nil
-        watchReloadAction = nil
-        isPerformingLiveReload = false
+        resyncAction = nil
+        isPerformingResync = false
         liveWatchStatus = .off
     }
 
-    private func handleWatchEvent(_ event: ResourceWatchEvent) async {
-        if event.type == .error {
-            liveWatchStatus = .recovering(lastEventAt: nil, reason: event.resourceName)
-            return
+    /// Applies a single watch event to the in-memory list. This is what keeps
+    /// the table live without re-fetching the whole resource list.
+    private func handleWatchChange(_ event: MappedWatchEvent) {
+        switch event.change {
+        case .upsert(var item):
+            if item.kind == .pod {
+                item = decoratedWithPodMetrics(item)
+            }
+            if let index = resources.firstIndex(where: { $0.id == item.id }) {
+                resources[index] = item
+            } else {
+                resources.append(item)
+            }
+            liveWatchStatus = .live(lastEventAt: Date())
+        case .delete(let id):
+            resources.removeAll { $0.id == id }
+            liveWatchStatus = .live(lastEventAt: Date())
+        case .error(let reason):
+            liveWatchStatus = .recovering(lastEventAt: nil, reason: reason)
         }
-
-        liveWatchStatus = .live(lastEventAt: Date())
-        applyImmediateWatchMutation(event)
-        scheduleLiveReload()
     }
 
-    private func scheduleLiveReload() {
-        watchDebounceTask?.cancel()
-        watchDebounceTask = Task { [weak self] in
-            guard let self else { return }
-            try? await Task.sleep(nanoseconds: Self.liveReloadDebounceNanoseconds)
-            guard !Task.isCancelled else { return }
-            await self.performLiveReloadIfNeeded()
-        }
-    }
-
-    private func startLivePolling() {
-        watchPollingTask?.cancel()
-        watchPollingTask = Task { [weak self] in
+    /// Rare full-list resync as a safety net for events missed across watch
+    /// reconnections. The heavy lifting is done by the incremental watch.
+    private func startFallbackResync() {
+        fallbackResyncTask?.cancel()
+        fallbackResyncTask = Task { [weak self] in
             guard let self else { return }
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: Self.livePollingIntervalNanoseconds)
+                try? await Task.sleep(nanoseconds: UInt64(Constants.resourceRefreshInterval * 1_000_000_000))
                 guard !Task.isCancelled else { break }
-                await self.performLiveReloadIfNeeded()
+                await self.performResyncIfNeeded()
             }
         }
     }
@@ -507,36 +584,54 @@ final class ResourceListViewModel {
             return
         }
 
-        if let lastEventAt = health.lastEventAt {
-            let isStale = Date().timeIntervalSince(lastEventAt) > Self.watchStaleThreshold
-            if isStale {
-                liveWatchStatus = .recovering(lastEventAt: lastEventAt, reason: "No recent watch events.")
-            } else {
-                liveWatchStatus = .live(lastEventAt: lastEventAt)
+        // Quiet streams are normal for slow-changing kinds; no staleness check.
+        liveWatchStatus = .live(lastEventAt: health.lastEventAt)
+    }
+
+    private func performResyncIfNeeded() async {
+        guard !isPerformingResync, let resyncAction else { return }
+        isPerformingResync = true
+        defer { isPerformingResync = false }
+        await resyncAction()
+    }
+
+    // MARK: - Pod Metrics Refresh
+
+    private func startPodMetricsRefresh(client: KubernetesClient, namespace: String?, contextName: String?) {
+        podMetricsTask?.cancel()
+        podMetricsTask = Task { [weak self] in
+            guard let self else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: Self.podMetricsRefreshIntervalNanoseconds)
+                guard !Task.isCancelled else { break }
+                await self.refreshPodMetrics(client: client, namespace: namespace, contextName: contextName)
             }
-            return
         }
-
-        liveWatchStatus = .syncing
     }
 
-    private func performLiveReloadIfNeeded() async {
-        guard !isPerformingLiveReload, let watchReloadAction else { return }
-        isPerformingLiveReload = true
-        defer { isPerformingLiveReload = false }
-        await watchReloadAction()
+    private func refreshPodMetrics(client: KubernetesClient, namespace: String?, contextName: String?) async {
+        let service = KubernetesService(client: client, contextName: contextName)
+        guard let usage = try? await service.fetchPodUsageMetrics(namespace: namespace) else { return }
+
+        podUsageMetricsCache = usage
+        podUsageMetricsFetchedAt = Date()
+        podUsageMetricsNamespaceKey = namespace ?? "*all*"
+
+        resources = resources.map { item in
+            guard item.kind == .pod else { return item }
+            return decoratedWithPodMetrics(item)
+        }
     }
 
-    private func applyImmediateWatchMutation(_ event: ResourceWatchEvent) {
-        guard event.type == .deleted else { return }
-        let eventNamespace = event.resourceNamespace ?? ""
-
-        resources.removeAll { item in
-            let itemNamespace = item.namespace ?? ""
-            return item.kind == event.resourceKind &&
-                item.name == event.resourceName &&
-                itemNamespace == eventNamespace
+    private func decoratedWithPodMetrics(_ item: ResourceItem) -> ResourceItem {
+        var item = item
+        if let metric = podUsageMetricsCache[item.id] {
+            item.extraColumns["cpu"] = Self.formatCPUUsage(metric.cpuUsageCores)
+            item.extraColumns["memory"] = Self.formatMemoryUsage(bytes: metric.memoryUsageBytes)
+            item.cpuCores = metric.cpuUsageCores
+            item.memoryBytes = metric.memoryUsageBytes
         }
+        return item
     }
 
     // MARK: - Delete
@@ -826,17 +921,15 @@ final class ResourceListViewModel {
 
     // MARK: - Resource Mappers
 
-    private nonisolated func podToResourceItem(
-        _ pod: core.v1.Pod,
-        usageMetrics: [String: PodUsageMetricsSample]
-    ) -> ResourceItem {
+    /// Base pod mapping without usage metrics — also used by the watch stream,
+    /// where metrics are merged in afterwards from the MainActor cache.
+    nonisolated static func basePodItem(_ pod: core.v1.Pod) -> ResourceItem {
         let restarts = PodStatusFormatter.restartCount(for: pod)
         let readiness = PodStatusFormatter.readySummary(for: pod)
         let status = PodStatusFormatter.displayStatus(for: pod)
         let namespace = pod.metadata?.namespace
         let name = pod.name ?? ""
         let resourceID = "\(namespace ?? "")/\(name)"
-        let metric = usageMetrics[resourceID]
 
         var extra: [String: String] = [:]
         extra["ready"] = "\(readiness.ready)/\(readiness.total)"
@@ -844,8 +937,8 @@ final class ResourceListViewModel {
         extra["node"] = pod.spec?.nodeName ?? ""
         extra["ip"] = pod.status?.podIP ?? ""
         extra["container"] = pod.spec?.containers.first?.name ?? ""
-        extra["cpu"] = metric.map { Self.formatCPUUsage($0.cpuUsageCores) } ?? "-"
-        extra["memory"] = metric.map { Self.formatMemoryUsage(bytes: $0.memoryUsageBytes) } ?? "-"
+        extra["cpu"] = "-"
+        extra["memory"] = "-"
         extra["containers"] = "\(readiness.ready)/\(readiness.total)"
         extra["containerReady"] = "\(readiness.ready)"
         extra["containerTotal"] = "\(readiness.total)"
@@ -861,6 +954,20 @@ final class ResourceListViewModel {
             kind: .pod,
             extraColumns: extra
         )
+    }
+
+    private nonisolated static func podItem(
+        _ pod: core.v1.Pod,
+        usageMetrics: [String: PodUsageMetricsSample]
+    ) -> ResourceItem {
+        var item = basePodItem(pod)
+        if let metric = usageMetrics[item.id] {
+            item.extraColumns["cpu"] = formatCPUUsage(metric.cpuUsageCores)
+            item.extraColumns["memory"] = formatMemoryUsage(bytes: metric.memoryUsageBytes)
+            item.cpuCores = metric.cpuUsageCores
+            item.memoryBytes = metric.memoryUsageBytes
+        }
+        return item
     }
 
     private nonisolated static func formatCPUUsage(_ cores: Double) -> String {
@@ -888,7 +995,7 @@ final class ResourceListViewModel {
         return String(format: "%.0fB", bytes)
     }
 
-    private nonisolated func deploymentToResourceItem(_ deploy: apps.v1.Deployment) -> ResourceItem {
+    nonisolated static func deploymentItem(_ deploy: apps.v1.Deployment) -> ResourceItem {
         let replicas = deploy.status?.replicas ?? 0
         let ready = deploy.status?.readyReplicas ?? 0
         let upToDate = deploy.status?.updatedReplicas ?? 0

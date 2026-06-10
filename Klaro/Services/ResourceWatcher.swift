@@ -2,30 +2,18 @@ import Foundation
 import SwiftkubeClient
 import SwiftkubeModel
 
-// MARK: - ResourceWatchEvent
+// MARK: - MappedWatchEvent
 
-/// Represents a watch event for a Kubernetes resource with type-erased resource data.
-struct ResourceWatchEvent: Sendable {
-    enum EventType: String, Sendable {
-        case added
-        case modified
-        case deleted
-        case error
+/// A watch event already mapped to the UI's row model, so consumers can apply
+/// it incrementally to a resource list without re-fetching anything.
+struct MappedWatchEvent: Sendable {
+    enum Change: Sendable {
+        case upsert(ResourceItem)
+        case delete(id: String)
+        case error(String)
     }
 
-    let type: EventType
-    let resourceName: String
-    let resourceNamespace: String?
-    let resourceVersion: String?
-    let resourceKind: ResourceKind
-
-    init(type: EventType, resourceName: String, resourceNamespace: String?, resourceVersion: String?, resourceKind: ResourceKind) {
-        self.type = type
-        self.resourceName = resourceName
-        self.resourceNamespace = resourceNamespace
-        self.resourceVersion = resourceVersion
-        self.resourceKind = resourceKind
-    }
+    let change: Change
 }
 
 struct ResourceWatchHealth: Sendable, Equatable {
@@ -43,17 +31,27 @@ struct ResourceWatchHealth: Sendable, Equatable {
 // MARK: - ResourceWatcher
 
 /// Actor that manages watch tasks per resource kind.
-/// Uses SwiftkubeClient's watch API to observe changes to Kubernetes resources,
-/// implementing exponential backoff for reconnection. Notifies consumers via
-/// AsyncStream of ResourceWatchEvent.
+/// Uses SwiftkubeClient's watch API with automatic reconnection and yields
+/// `MappedWatchEvent`s through an AsyncStream so the UI can apply changes
+/// incrementally.
 actor ResourceWatcher {
 
     // MARK: - Properties
 
     private var watchTasks: [ResourceKind: Task<Void, Never>] = [:]
-    private var continuations: [ResourceKind: AsyncStream<ResourceWatchEvent>.Continuation] = [:]
+    private var continuations: [ResourceKind: AsyncStream<MappedWatchEvent>.Continuation] = [:]
     private var healthByKind: [ResourceKind: ResourceWatchHealth] = [:]
     private let client: KubernetesClient
+
+    private static let retryStrategy = RetryStrategy(
+        policy: .always,
+        backoff: .exponential(
+            maximumDelay: Constants.watchReconnectMaxDelay,
+            multiplier: 2.0
+        ),
+        initialDelay: Constants.watchReconnectBaseDelay,
+        jitter: 0.2
+    )
 
     // MARK: - Initialization
 
@@ -61,37 +59,72 @@ actor ResourceWatcher {
         self.client = client
     }
 
+    /// Minimal mapper for aggregate views that only use watch events as a
+    /// change signal and reload their own data.
+    nonisolated static func signalMapper<R: KubernetesAPIResource>(kind: ResourceKind) -> @Sendable (R) -> ResourceItem {
+        { resource in
+            let name = resource.name ?? ""
+            let namespace = resource.metadata?.namespace
+            return ResourceItem(
+                id: namespace.map { "\($0)/\(name)" } ?? name,
+                name: name,
+                namespace: namespace,
+                status: "",
+                age: nil,
+                labels: [:],
+                annotations: [:],
+                kind: kind
+            )
+        }
+    }
+
     // MARK: - Watch Management
 
-    /// Starts watching the specified resource kind in the given namespace.
-    /// Returns an AsyncStream that yields ResourceWatchEvent values.
-    /// If a watch is already active for this kind, the existing one is cancelled first.
-    func watch(
+    /// Starts watching a namespaced resource type, yielding mapped events.
+    /// If a watch is already active for this kind, it is cancelled first.
+    func watchMapped<R: KubernetesAPIResource & NamespacedResource & ReadableResource>(
+        _ type: R.Type,
         kind: ResourceKind,
-        in namespace: String? = nil
-    ) -> AsyncStream<ResourceWatchEvent> {
-        // Cancel any existing watch for this kind
-        stopWatching(kind: kind)
-        healthByKind[kind] = .initial
-
-        let (stream, continuation) = AsyncStream<ResourceWatchEvent>.makeStream(
-            bufferingPolicy: .bufferingNewest(1000)
-        )
-        continuations[kind] = continuation
-
-        let retryStrategy = RetryStrategy(
-            policy: .always,
-            backoff: .exponential(
-                maximumDelay: Constants.watchReconnectMaxDelay,
-                multiplier: 2.0
-            ),
-            initialDelay: Constants.watchReconnectBaseDelay,
-            jitter: 0.2
-        )
+        in namespace: String?,
+        mapper: @escaping @Sendable (R) -> ResourceItem
+    ) -> AsyncStream<MappedWatchEvent> {
+        let (stream, _) = prepareStream(for: kind)
 
         let task = Task { [weak self] in
             guard let self else { return }
-            await self.runWatch(kind: kind, namespace: namespace, retryStrategy: retryStrategy)
+            do {
+                let selector: NamespaceSelector = namespace.map { .namespace($0) } ?? .allNamespaces
+                let scopedClient = self.client.namespaceScoped(for: type)
+                let watchTask = try await scopedClient.watch(in: selector, retryStrategy: Self.retryStrategy)
+                let eventStream = await watchTask.start()
+                try await self.consume(eventStream, kind: kind, mapper: mapper)
+            } catch {
+                await self.emitStreamFailure(kind: kind, error: error)
+            }
+        }
+
+        watchTasks[kind] = task
+        return stream
+    }
+
+    /// Starts watching a cluster-scoped resource type, yielding mapped events.
+    func watchMappedClusterScoped<R: KubernetesAPIResource & ClusterScopedResource & ReadableResource>(
+        _ type: R.Type,
+        kind: ResourceKind,
+        mapper: @escaping @Sendable (R) -> ResourceItem
+    ) -> AsyncStream<MappedWatchEvent> {
+        let (stream, _) = prepareStream(for: kind)
+
+        let task = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let scopedClient = self.client.clusterScoped(for: type)
+                let watchTask = try await scopedClient.watch(retryStrategy: Self.retryStrategy)
+                let eventStream = await watchTask.start()
+                try await self.consume(eventStream, kind: kind, mapper: mapper)
+            } catch {
+                await self.emitStreamFailure(kind: kind, error: error)
+            }
         }
 
         watchTasks[kind] = task
@@ -123,160 +156,45 @@ actor ResourceWatcher {
         healthByKind[kind]
     }
 
-    // MARK: - Private Watch Implementation
+    // MARK: - Private
 
-    private func runWatch(
-        kind: ResourceKind,
-        namespace: String?,
-        retryStrategy: RetryStrategy
-    ) async {
-        do {
-            switch kind {
-            case .pod:
-                try await watchNamespaced(core.v1.Pod.self, kind: kind, namespace: namespace, retryStrategy: retryStrategy)
-            case .deployment:
-                try await watchNamespaced(apps.v1.Deployment.self, kind: kind, namespace: namespace, retryStrategy: retryStrategy)
-            case .statefulSet:
-                try await watchNamespaced(apps.v1.StatefulSet.self, kind: kind, namespace: namespace, retryStrategy: retryStrategy)
-            case .daemonSet:
-                try await watchNamespaced(apps.v1.DaemonSet.self, kind: kind, namespace: namespace, retryStrategy: retryStrategy)
-            case .replicaSet:
-                try await watchNamespaced(apps.v1.ReplicaSet.self, kind: kind, namespace: namespace, retryStrategy: retryStrategy)
-            case .job:
-                try await watchNamespaced(batch.v1.Job.self, kind: kind, namespace: namespace, retryStrategy: retryStrategy)
-            case .cronJob:
-                try await watchNamespaced(batch.v1.CronJob.self, kind: kind, namespace: namespace, retryStrategy: retryStrategy)
-            case .service:
-                try await watchNamespaced(core.v1.Service.self, kind: kind, namespace: namespace, retryStrategy: retryStrategy)
-            case .ingress:
-                try await watchNamespaced(networking.v1.Ingress.self, kind: kind, namespace: namespace, retryStrategy: retryStrategy)
-            case .endpoint:
-                try await watchNamespaced(core.v1.Endpoints.self, kind: kind, namespace: namespace, retryStrategy: retryStrategy)
-            case .horizontalPodAutoscaler:
-                try await watchNamespaced(autoscaling.v2.HorizontalPodAutoscaler.self, kind: kind, namespace: namespace, retryStrategy: retryStrategy)
-            case .networkPolicy:
-                try await watchNamespaced(networking.v1.NetworkPolicy.self, kind: kind, namespace: namespace, retryStrategy: retryStrategy)
-            case .configMap:
-                try await watchNamespaced(core.v1.ConfigMap.self, kind: kind, namespace: namespace, retryStrategy: retryStrategy)
-            case .secret:
-                try await watchNamespaced(core.v1.Secret.self, kind: kind, namespace: namespace, retryStrategy: retryStrategy)
-            case .persistentVolumeClaim:
-                try await watchNamespaced(core.v1.PersistentVolumeClaim.self, kind: kind, namespace: namespace, retryStrategy: retryStrategy)
-            case .limitRange:
-                try await watchNamespaced(core.v1.LimitRange.self, kind: kind, namespace: namespace, retryStrategy: retryStrategy)
-            case .resourceQuota:
-                try await watchNamespaced(core.v1.ResourceQuota.self, kind: kind, namespace: namespace, retryStrategy: retryStrategy)
-            case .podDisruptionBudget:
-                try await watchNamespaced(policy.v1.PodDisruptionBudget.self, kind: kind, namespace: namespace, retryStrategy: retryStrategy)
-            case .serviceAccount:
-                try await watchNamespaced(core.v1.ServiceAccount.self, kind: kind, namespace: namespace, retryStrategy: retryStrategy)
-            case .event:
-                try await watchNamespaced(core.v1.Event.self, kind: kind, namespace: namespace, retryStrategy: retryStrategy)
-            case .role:
-                try await watchNamespaced(rbac.v1.Role.self, kind: kind, namespace: namespace, retryStrategy: retryStrategy)
-            case .roleBinding:
-                try await watchNamespaced(rbac.v1.RoleBinding.self, kind: kind, namespace: namespace, retryStrategy: retryStrategy)
-            case .node:
-                try await watchClusterScoped(core.v1.Node.self, kind: kind, retryStrategy: retryStrategy)
-            case .namespace:
-                try await watchClusterScoped(core.v1.Namespace.self, kind: kind, retryStrategy: retryStrategy)
-            case .persistentVolume:
-                try await watchClusterScoped(core.v1.PersistentVolume.self, kind: kind, retryStrategy: retryStrategy)
-            case .storageClass:
-                try await watchClusterScoped(storage.v1.StorageClass.self, kind: kind, retryStrategy: retryStrategy)
-            case .clusterRole:
-                try await watchClusterScoped(rbac.v1.ClusterRole.self, kind: kind, retryStrategy: retryStrategy)
-            case .clusterRoleBinding:
-                try await watchClusterScoped(rbac.v1.ClusterRoleBinding.self, kind: kind, retryStrategy: retryStrategy)
-            }
-        } catch {
-            // If watching fails entirely, emit an error event and clean up
-            if !Task.isCancelled {
-                updateHealthForError(kind: kind, message: error.localizedDescription)
-                let errorEvent = ResourceWatchEvent(
-                    type: .error,
-                    resourceName: error.localizedDescription,
-                    resourceNamespace: nil,
-                    resourceVersion: nil,
-                    resourceKind: kind
-                )
-                continuations[kind]?.yield(errorEvent)
-            }
-        }
+    private func prepareStream(for kind: ResourceKind) -> (AsyncStream<MappedWatchEvent>, AsyncStream<MappedWatchEvent>.Continuation) {
+        stopWatching(kind: kind)
+        healthByKind[kind] = .initial
+
+        let (stream, continuation) = AsyncStream<MappedWatchEvent>.makeStream(
+            bufferingPolicy: .bufferingNewest(1000)
+        )
+        continuations[kind] = continuation
+        return (stream, continuation)
     }
 
-    /// Watches a namespaced resource type and emits events through the continuation.
-    private func watchNamespaced<R: KubernetesAPIResource & NamespacedResource & ReadableResource>(
-        _ type: R.Type,
+    private func consume<R: KubernetesAPIResource>(
+        _ eventStream: AsyncThrowingStream<WatchEvent<R>, Error>,
         kind: ResourceKind,
-        namespace: String?,
-        retryStrategy: RetryStrategy
+        mapper: @escaping @Sendable (R) -> ResourceItem
     ) async throws {
-        let selector: NamespaceSelector = namespace.map { .namespace($0) } ?? .allNamespaces
-        let scopedClient = client.namespaceScoped(for: type)
-        let watchTask = try await scopedClient.watch(in: selector, retryStrategy: retryStrategy)
-        let stream = await watchTask.start()
-
-        for try await event in stream {
+        for try await event in eventStream {
             guard !Task.isCancelled else { break }
 
-            let mappedType = mapEventType(event.type)
-            if mappedType == .error {
-                updateHealthForError(kind: kind, message: "Watch stream returned an API error event.")
-            } else {
+            switch event.type {
+            case .added, .modified:
                 updateHealthForSuccess(kind: kind)
+                continuations[kind]?.yield(MappedWatchEvent(change: .upsert(mapper(event.resource))))
+            case .deleted:
+                updateHealthForSuccess(kind: kind)
+                continuations[kind]?.yield(MappedWatchEvent(change: .delete(id: mapper(event.resource).id)))
+            case .error:
+                updateHealthForError(kind: kind, message: "Watch stream returned an API error event.")
+                continuations[kind]?.yield(MappedWatchEvent(change: .error("Watch stream returned an API error event.")))
             }
-
-            let watchEvent = ResourceWatchEvent(
-                type: mappedType,
-                resourceName: event.resource.name ?? "unknown",
-                resourceNamespace: event.resource.metadata?.namespace,
-                resourceVersion: event.resource.metadata?.resourceVersion,
-                resourceKind: kind
-            )
-            continuations[kind]?.yield(watchEvent)
         }
     }
 
-    /// Watches a cluster-scoped resource type and emits events through the continuation.
-    private func watchClusterScoped<R: KubernetesAPIResource & ClusterScopedResource & ReadableResource>(
-        _ type: R.Type,
-        kind: ResourceKind,
-        retryStrategy: RetryStrategy
-    ) async throws {
-        let scopedClient = client.clusterScoped(for: type)
-        let watchTask = try await scopedClient.watch(retryStrategy: retryStrategy)
-        let stream = await watchTask.start()
-
-        for try await event in stream {
-            guard !Task.isCancelled else { break }
-
-            let mappedType = mapEventType(event.type)
-            if mappedType == .error {
-                updateHealthForError(kind: kind, message: "Watch stream returned an API error event.")
-            } else {
-                updateHealthForSuccess(kind: kind)
-            }
-
-            let watchEvent = ResourceWatchEvent(
-                type: mappedType,
-                resourceName: event.resource.name ?? "unknown",
-                resourceNamespace: nil,
-                resourceVersion: event.resource.metadata?.resourceVersion,
-                resourceKind: kind
-            )
-            continuations[kind]?.yield(watchEvent)
-        }
-    }
-
-    /// Maps SwiftkubeClient's EventType to our ResourceWatchEvent.EventType.
-    private func mapEventType(_ type: EventType) -> ResourceWatchEvent.EventType {
-        switch type {
-        case .added: return .added
-        case .modified: return .modified
-        case .deleted: return .deleted
-        case .error: return .error
-        }
+    private func emitStreamFailure(kind: ResourceKind, error: Error) {
+        guard !Task.isCancelled else { return }
+        updateHealthForError(kind: kind, message: error.localizedDescription)
+        continuations[kind]?.yield(MappedWatchEvent(change: .error(error.localizedDescription)))
     }
 
     private func updateHealthForSuccess(kind: ResourceKind) {

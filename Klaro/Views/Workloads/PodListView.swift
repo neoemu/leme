@@ -10,8 +10,8 @@ struct PodListView: View {
     private let columns: [ResourceTableColumn] = [
         ResourceTableColumn(title: "Name", key: "name", sortField: .name),
         ResourceTableColumn(title: "Namespace", key: "namespace", width: 140, sortField: .namespace),
-        ResourceTableColumn(title: "CPU", key: "cpu", width: 90),
-        ResourceTableColumn(title: "Memory", key: "memory", width: 100),
+        ResourceTableColumn(title: "CPU", key: "cpu", width: 90, sortField: .cpu),
+        ResourceTableColumn(title: "Memory", key: "memory", width: 100, sortField: .memory),
         ResourceTableColumn(title: "Container", key: "containers", width: 120),
         ResourceTableColumn(title: "Status", key: "status", width: 110, sortField: .status),
         ResourceTableColumn(title: "Ready", key: "ready", width: 70),
