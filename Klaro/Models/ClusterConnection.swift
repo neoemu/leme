@@ -7,6 +7,31 @@ enum ClusterConnectionStatus: String, Sendable {
     case error
 }
 
+enum ClusterEnvironment: String, Sendable {
+    case production = "PROD"
+    case staging = "STG"
+    case development = "DEV"
+    case test = "TEST"
+
+    static func detect(from name: String) -> ClusterEnvironment? {
+        let lowered = name.lowercased()
+        if lowered.contains("prod") || lowered.contains("prd") {
+            return .production
+        }
+        if lowered.contains("stag") || lowered.contains("stg")
+            || lowered.contains("hml") || lowered.contains("homolog") {
+            return .staging
+        }
+        if lowered.contains("dev") {
+            return .development
+        }
+        if lowered.contains("test") || lowered.contains("qa") {
+            return .test
+        }
+        return nil
+    }
+}
+
 struct ClusterConnection: Identifiable, Sendable, Hashable {
     let id: UUID
     var contextName: String
@@ -45,6 +70,10 @@ struct ClusterConnection: Identifiable, Sendable, Hashable {
 
     var displayName: String {
         contextName.isEmpty ? clusterName : contextName
+    }
+
+    var environment: ClusterEnvironment? {
+        ClusterEnvironment.detect(from: displayName)
     }
 
     var initials: String {

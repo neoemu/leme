@@ -70,6 +70,7 @@
 		B9161EBDE6EC6711C953D938 /* ClusterViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D10616A01CFE17BC8B6EA25 /* ClusterViewModel.swift */; };
 		C6C6D4C60A2FD870BED83622 /* KlaroTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70C4D1336B2B00EFB5434E7 /* KlaroTests.swift */; };
 		CCD2B0EA6A5B8D98623B464D /* ResourceCategory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B4B3F248BE29417423CACC3 /* ResourceCategory.swift */; };
+		D065CBD24477B571E8ED0AEA /* ClusterSwitcherView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 450B8457971C95902DAFC7BA /* ClusterSwitcherView.swift */; };
 		D41E4F94044DDEDF19778258 /* CapacityBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACB1786F46D9857ACFB57428 /* CapacityBar.swift */; };
 		D6A9B1E1F5F64C787889EF4D /* MetricsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 714692D8F205046CF077FB76 /* MetricsService.swift */; };
 		D7B16A1102DAC24335C4AAB7 /* UnifiedWorkloadsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1EBA89B0330F62715589B82 /* UnifiedWorkloadsView.swift */; };
@@ -132,6 +133,7 @@
 		3F267A3D222C2E036ABA07C0 /* AgeLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgeLabel.swift; sourceTree = "<group>"; };
 		422FC34F828A95DFA80BDD30 /* ClusterRoleBindingListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClusterRoleBindingListView.swift; sourceTree = "<group>"; };
 		43909A0BC026C8C2D10E6702 /* InspectorDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InspectorDetailView.swift; sourceTree = "<group>"; };
+		450B8457971C95902DAFC7BA /* ClusterSwitcherView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClusterSwitcherView.swift; sourceTree = "<group>"; };
 		489D6D801DEABA8BDEA173CA /* ResourceKind.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResourceKind.swift; sourceTree = "<group>"; };
 		4B739605E129B91103638A40 /* ServiceAccountListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceAccountListView.swift; sourceTree = "<group>"; };
 		515CC9E8E7F4BA6BA45BD296 /* ClusterRoleListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClusterRoleListView.swift; sourceTree = "<group>"; };
@@ -312,6 +314,7 @@
 			isa = PBXGroup;
 			children = (
 				CBB9954C98141BAAEAA37862 /* BottomPanelView.swift */,
+				450B8457971C95902DAFC7BA /* ClusterSwitcherView.swift */,
 				6D95C4394116C90C114F2FF5 /* ContentAreaView.swift */,
 				43909A0BC026C8C2D10E6702 /* InspectorDetailView.swift */,
 				2A6DFBDDD4FCCA980F0BA6CE /* MainLayout.swift */,
@@ -624,6 +627,7 @@
 				B4D69F9C35A65C7BB69CE0D2 /* ClusterOverviewView.swift in Sources */,
 				7A9B1589BA362BE3E4494545 /* ClusterRoleBindingListView.swift in Sources */,
 				4A915B58CD58489D03E790AF /* ClusterRoleListView.swift in Sources */,
+				D065CBD24477B571E8ED0AEA /* ClusterSwitcherView.swift in Sources */,
 				B9161EBDE6EC6711C953D938 /* ClusterViewModel.swift in Sources */,
 				49505A38B3D78458F3A407C8 /* Color+Theme.swift in Sources */,
 				842C64CE8492B7C281E0B51F /* CommandPaletteView.swift in Sources */,
@@ -796,6 +800,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -869,6 +874,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -908,6 +914,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -924,6 +931,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

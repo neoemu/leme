@@ -28,7 +28,7 @@ struct SidebarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            clusterSelector
+            ClusterSwitcherView()
                 .padding(.horizontal, Theme.Dimensions.padding)
                 .padding(.vertical, Theme.Dimensions.spacing)
 
@@ -36,10 +36,6 @@ struct SidebarView: View {
                 .overlay(Theme.Colors.sidebarMutedText.opacity(0.12))
 
             if appState.activeCluster != nil {
-                clusterHeader
-                    .padding(.horizontal, Theme.Dimensions.padding)
-                    .padding(.top, Theme.Dimensions.spacing)
-
                 NamespaceFilterView()
                     .padding(.horizontal, Theme.Dimensions.padding)
                     .padding(.vertical, Theme.Dimensions.spacing)
@@ -538,144 +534,4 @@ struct SidebarView: View {
         }
     }
 
-    // MARK: - Cluster Selector
-
-    private var clusterSelector: some View {
-        HStack(spacing: Theme.Dimensions.spacing) {
-            ForEach(appState.clusters) { cluster in
-                Button {
-                    appState.selectCluster(cluster.id)
-                    if cluster.status == .disconnected {
-                        Task {
-                            await clusterViewModel.connect(cluster: cluster, appState: appState)
-                        }
-                    }
-                } label: {
-                    ZStack {
-                        Circle()
-                            .fill(appState.activeClusterID == cluster.id ? Theme.Colors.sidebarSelectionBackground : Color.white.opacity(0.20))
-                            .frame(width: 32, height: 32)
-                            .overlay(
-                                Circle()
-                                    .stroke(
-                                        cluster.status == .error ? Theme.Colors.failed : Color.clear,
-                                        lineWidth: 2
-                                    )
-                                    .frame(width: 36, height: 36)
-                            )
-                            .opacity(cluster.status == .connecting ? 0.7 : 1.0)
-                            .animation(
-                                cluster.status == .connecting
-                                    ? Animation.easeInOut(duration: 0.8).repeatForever(autoreverses: true)
-                                    : .default,
-                                value: cluster.status == .connecting
-                            )
-
-                        if cluster.status == .connecting {
-                            ProgressView()
-                                .controlSize(.small)
-                                .tint(Theme.Colors.sidebarText)
-                        } else {
-                            Text(cluster.initials)
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(Theme.Colors.sidebarText)
-                        }
-                    }
-                }
-                .buttonStyle(.plain)
-                .help(clusterTooltip(for: cluster))
-                .contextMenu {
-                    if cluster.status == .connected {
-                        Button("Disconnect") {
-                            Task {
-                                await clusterViewModel.disconnect(clusterID: cluster.id, appState: appState)
-                            }
-                        }
-                        Button("Refresh Namespaces") {
-                            Task {
-                                await clusterViewModel.refreshNamespaces(for: cluster.id, appState: appState)
-                            }
-                        }
-                    } else {
-                        Button("Connect") {
-                            Task {
-                                await clusterViewModel.connect(cluster: cluster, appState: appState)
-                            }
-                        }
-                    }
-                }
-            }
-
-            Spacer()
-        }
-    }
-
-    // MARK: - Cluster Header
-
-    @ViewBuilder
-    private var clusterHeader: some View {
-        if let cluster = appState.activeCluster {
-            HStack(spacing: Theme.Dimensions.spacing) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(cluster.displayName)
-                        .font(Theme.Fonts.subtitle)
-                        .foregroundStyle(Theme.Colors.sidebarText)
-                        .lineLimit(1)
-
-                    if let version = cluster.serverVersion {
-                        Text("v\(version)")
-                            .font(Theme.Fonts.caption)
-                            .foregroundStyle(Theme.Colors.sidebarMutedText)
-                    }
-                }
-
-                Spacer()
-
-                statusDot(for: cluster.status)
-            }
-        }
-    }
-
-    private func statusDot(for status: ClusterConnectionStatus) -> some View {
-        let tooltipText: String = {
-            guard let cluster = appState.activeCluster else {
-                return status.rawValue.capitalized
-            }
-            var text = "Status: \(status.rawValue.capitalized)"
-            if !cluster.clusterURL.isEmpty {
-                text += "\nServer: \(cluster.clusterURL)"
-            }
-            if let errorMsg = cluster.errorMessage, status == .error {
-                text += "\nError: \(errorMsg)"
-            }
-            return text
-        }()
-
-        return Circle()
-            .fill(colorForStatus(status))
-            .frame(width: 8, height: 8)
-            .help(tooltipText)
-    }
-
-    private func colorForStatus(_ status: ClusterConnectionStatus) -> Color {
-        switch status {
-        case .connected:
-            return Theme.Colors.running
-        case .connecting:
-            return Theme.Colors.pending
-        case .error:
-            return Theme.Colors.failed
-        case .disconnected:
-            return Theme.Colors.terminated
-        }
-    }
-
-    private func clusterTooltip(for cluster: ClusterConnection) -> String {
-        var text = cluster.displayName
-        text += " (\(cluster.status.rawValue))"
-        if cluster.status == .error, let errorMsg = cluster.errorMessage {
-            text += "\nError: \(errorMsg)"
-        }
-        return text
-    }
 }

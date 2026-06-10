@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import Klaro
 
@@ -15,6 +16,15 @@ import Testing
 
     let conn2 = ClusterConnection(contextName: "prod-east")
     #expect(conn2.initials == "PE")
+}
+
+@Test func clusterEnvironmentDetection() {
+    #expect(ClusterEnvironment.detect(from: "g4-prod-east") == .production)
+    #expect(ClusterEnvironment.detect(from: "g4-staging") == .staging)
+    #expect(ClusterEnvironment.detect(from: "hml-cluster") == .staging)
+    #expect(ClusterEnvironment.detect(from: "g3-dev") == .development)
+    #expect(ClusterEnvironment.detect(from: "qa-cluster") == .test)
+    #expect(ClusterEnvironment.detect(from: "g4-east") == nil)
 }
 
 @Test func dateRelativeAge() {

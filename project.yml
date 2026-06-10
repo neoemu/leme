@@ -70,6 +70,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.klaro.tests
+        GENERATE_INFOPLIST_FILE: YES
 
   KlaroUITests:
     type: bundle.ui-testing
@@ -81,3 +82,4 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.klaro.uitests
+        GENERATE_INFOPLIST_FILE: YES
