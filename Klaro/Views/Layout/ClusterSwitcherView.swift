@@ -64,6 +64,20 @@ struct ClusterSwitcherView: View {
         .onHover { isHovered = $0 }
         .help(activeClusterTooltip)
         .accessibilityLabel("Cluster switcher")
+        .contextMenu {
+            if let cluster = appState.activeCluster, cluster.status == .connected {
+                Button("Disconnect from \(cluster.displayName)") {
+                    Task {
+                        await clusterViewModel.disconnect(clusterID: cluster.id, appState: appState)
+                    }
+                }
+                Button("Refresh Namespaces") {
+                    Task {
+                        await clusterViewModel.refreshNamespaces(for: cluster.id, appState: appState)
+                    }
+                }
+            }
+        }
         .popover(isPresented: $isPopoverPresented, arrowEdge: .bottom) {
             ClusterSwitcherPopover(isPresented: $isPopoverPresented)
         }
@@ -129,10 +143,14 @@ private struct ClusterSwitcherPopover: View {
                         ForEach(filteredClusters) { cluster in
                             ClusterSwitcherRow(
                                 cluster: cluster,
-                                isActive: cluster.id == appState.activeClusterID
-                            ) {
-                                select(cluster)
-                            }
+                                isActive: cluster.id == appState.activeClusterID,
+                                action: {
+                                    select(cluster)
+                                },
+                                onDisconnect: cluster.status == .connected
+                                    ? { disconnect(cluster) }
+                                    : nil
+                            )
                             .contextMenu {
                                 contextMenuItems(for: cluster)
                             }
@@ -148,12 +166,18 @@ private struct ClusterSwitcherPopover: View {
 
     private func select(_ cluster: ClusterConnection) {
         appState.selectCluster(cluster.id)
-        if cluster.status == .disconnected {
+        if cluster.status == .disconnected || cluster.status == .error {
             Task {
                 await clusterViewModel.connect(cluster: cluster, appState: appState)
             }
         }
         isPresented = false
+    }
+
+    private func disconnect(_ cluster: ClusterConnection) {
+        Task {
+            await clusterViewModel.disconnect(clusterID: cluster.id, appState: appState)
+        }
     }
 
     @ViewBuilder
@@ -185,53 +209,62 @@ private struct ClusterSwitcherRow: View {
     let cluster: ClusterConnection
     let isActive: Bool
     let action: () -> Void
+    var onDisconnect: (() -> Void)?
 
     @State private var isHovered = false
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: Theme.Dimensions.spacing) {
-                ClusterStatusIndicator(status: cluster.status)
+        HStack(spacing: Theme.Dimensions.spacing) {
+            ClusterStatusIndicator(status: cluster.status)
 
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(cluster.displayName)
-                        .font(Theme.Fonts.sidebarItem)
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(cluster.displayName)
+                    .font(Theme.Fonts.sidebarItem)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
 
-                    if cluster.status == .error, let errorMsg = cluster.errorMessage {
-                        Text(errorMsg)
-                            .font(Theme.Fonts.caption)
-                            .foregroundStyle(Theme.Colors.failed)
-                            .lineLimit(1)
-                    }
-                }
-
-                Spacer(minLength: Theme.Dimensions.smallSpacing)
-
-                if let environment = cluster.environment {
-                    ClusterEnvironmentBadge(environment: environment)
-                }
-
-                if let version = cluster.serverVersion {
-                    Text("v\(version)")
+                if cluster.status == .error, let errorMsg = cluster.errorMessage {
+                    Text(errorMsg)
                         .font(Theme.Fonts.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.Colors.failed)
                         .lineLimit(1)
                 }
-
-                Image(systemName: "checkmark")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.Colors.accent)
-                    .opacity(isActive ? 1 : 0)
             }
-            .padding(.horizontal, Theme.Dimensions.padding)
-            .padding(.vertical, 5)
-            .background(isHovered ? Theme.Colors.tableSelectionBackground : Color.clear)
-            .contentShape(Rectangle())
+
+            Spacer(minLength: Theme.Dimensions.smallSpacing)
+
+            if let environment = cluster.environment {
+                ClusterEnvironmentBadge(environment: environment)
+            }
+
+            if let version = cluster.serverVersion {
+                Text("v\(version)")
+                    .font(Theme.Fonts.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            if let onDisconnect {
+                Button(action: onDisconnect) {
+                    Image(systemName: "power")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(isHovered ? Theme.Colors.failed : .secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Disconnect")
+            }
+
+            Image(systemName: "checkmark")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Theme.Colors.accent)
+                .opacity(isActive ? 1 : 0)
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, Theme.Dimensions.padding)
+        .padding(.vertical, 5)
+        .background(isHovered ? Theme.Colors.tableSelectionBackground : Color.clear)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: action)
         .onHover { isHovered = $0 }
         .help(cluster.clusterURL.isEmpty ? cluster.displayName : cluster.clusterURL)
     }
