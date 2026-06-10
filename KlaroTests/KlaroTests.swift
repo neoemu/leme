@@ -36,8 +36,10 @@ import Testing
 }
 
 @Test func dateRelativeAge() {
-    let now = Date()
-    #expect(now.relativeAge.hasSuffix("s") || now.relativeAge == "just now")
+    // Evaluate once: relativeAge recomputes against a fresh Date() per access,
+    // so two evaluations can straddle the "just now"/"0s" boundary.
+    let nowAge = Date().relativeAge
+    #expect(nowAge.hasSuffix("s") || nowAge == "just now")
 
     let fiveMinAgo = Date(timeIntervalSinceNow: -300)
     #expect(fiveMinAgo.relativeAge == "5m")
