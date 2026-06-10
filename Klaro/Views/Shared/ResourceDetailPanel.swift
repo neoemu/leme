@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import CodeEditor
 import Foundation
@@ -58,6 +59,8 @@ struct ResourceDetailPanel: View {
     @State private var selectedTab: ResourceDetailTab = .overview
     @State private var yamlDisplayMode: YAMLDisplayMode = .clean
     @State private var nodeMetricsMode: NodeMetricsViewMode = .cpu
+    @State private var revealedSecretKeys: Set<String> = []
+    @State private var copiedSecretKey: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -202,6 +205,14 @@ struct ResourceDetailPanel: View {
                     }
                 }
 
+                if !viewModel.secretData.isEmpty {
+                    cardSection(title: "Data (\(viewModel.secretType))") {
+                        ForEach(Array(viewModel.secretData.sorted(by: { $0.key < $1.key })), id: \.key) { key, encodedValue in
+                            secretDataRow(key: key, encodedValue: encodedValue)
+                        }
+                    }
+                }
+
                 if !viewModel.labels.isEmpty {
                     cardSection(title: "Labels") {
                         ForEach(Array(viewModel.labels.sorted(by: { $0.key < $1.key })), id: \.key) { key, value in
@@ -271,6 +282,82 @@ struct ResourceDetailPanel: View {
             }
             .padding(Theme.Dimensions.padding)
         }
+    }
+
+    // MARK: - Secret Data Row
+
+    private func secretDataRow(key: String, encodedValue: String) -> some View {
+        let isRevealed = revealedSecretKeys.contains(key)
+        let decodedValue = Self.decodeBase64(encodedValue)
+
+        return VStack(alignment: .leading, spacing: Theme.Dimensions.smallSpacing) {
+            HStack(spacing: Theme.Dimensions.smallSpacing) {
+                Text(key)
+                    .font(Theme.Fonts.monoSmall)
+                    .foregroundStyle(Theme.Colors.secondaryText)
+                    .lineLimit(1)
+
+                Spacer(minLength: Theme.Dimensions.smallSpacing)
+
+                Button {
+                    if isRevealed {
+                        revealedSecretKeys.remove(key)
+                    } else {
+                        revealedSecretKeys.insert(key)
+                    }
+                } label: {
+                    Image(systemName: isRevealed ? "eye.slash" : "eye")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.Colors.secondaryText)
+                }
+                .buttonStyle(.plain)
+                .help(isRevealed ? "Hide value" : "Reveal decoded value")
+
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(decodedValue ?? encodedValue, forType: .string)
+                    withAnimation(Theme.Animations.hoverTransition) {
+                        copiedSecretKey = key
+                    }
+                    Task {
+                        try? await Task.sleep(nanoseconds: 1_200_000_000)
+                        if copiedSecretKey == key {
+                            withAnimation(Theme.Animations.hoverTransition) {
+                                copiedSecretKey = nil
+                            }
+                        }
+                    }
+                } label: {
+                    Image(systemName: copiedSecretKey == key ? "checkmark" : "doc.on.doc")
+                        .font(.system(size: 11))
+                        .foregroundStyle(copiedSecretKey == key ? Theme.Colors.running : Theme.Colors.secondaryText)
+                }
+                .buttonStyle(.plain)
+                .help(copiedSecretKey == key ? "Copied!" : "Copy decoded value")
+            }
+
+            if isRevealed {
+                Text(decodedValue ?? "<binary data — \(encodedValue.count) base64 chars>")
+                    .font(Theme.Fonts.monoSmall)
+                    .textSelection(.enabled)
+                    .lineLimit(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(Theme.Dimensions.smallSpacing)
+                    .background(
+                        RoundedRectangle(cornerRadius: Theme.Dimensions.cornerRadius)
+                            .fill(Theme.Colors.cardBackground)
+                    )
+            } else {
+                Text(String(repeating: "•", count: min(max(decodedValue?.count ?? 8, 4), 24)))
+                    .font(Theme.Fonts.monoSmall)
+                    .foregroundStyle(Theme.Colors.tertiaryText)
+            }
+        }
+    }
+
+    private static func decodeBase64(_ encoded: String) -> String? {
+        guard let data = Data(base64Encoded: encoded) else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 
     // MARK: - Card Section

@@ -756,6 +756,56 @@ final class ResourceListViewModel {
         }
     }
 
+    // MARK: - Node Scheduling
+
+    func setNodeSchedulable(name: String, unschedulable: Bool, client: KubernetesClient) async {
+        let verb = unschedulable ? "Cordon" : "Uncordon"
+        setOperationRunning("\(verb)ing node \(name)…")
+        let service = KubernetesService(client: client)
+        do {
+            try await service.setNodeUnschedulable(name: name, unschedulable: unschedulable)
+            setOperationSuccess("\(verb)ed node \(name)")
+        } catch {
+            setOperationError("\(verb) failed: \(error.localizedDescription)")
+        }
+    }
+
+    func drainNode(name: String, client: KubernetesClient, contextName: String?) async {
+        setOperationRunning("Draining node \(name)… (this can take a while)")
+        let service = KubernetesService(client: client, contextName: contextName)
+        do {
+            _ = try await service.drainNode(name: name)
+            setOperationSuccess("Drained node \(name)")
+        } catch {
+            setOperationError("Drain failed: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Rollout Undo
+
+    func rolloutUndo(kind: ResourceKind, name: String, namespace: String?, client: KubernetesClient, contextName: String?) async {
+        let resourceArgument: String
+        switch kind {
+        case .deployment:
+            resourceArgument = "deployment/\(name)"
+        case .statefulSet:
+            resourceArgument = "statefulset/\(name)"
+        case .daemonSet:
+            resourceArgument = "daemonset/\(name)"
+        default:
+            return
+        }
+
+        setOperationRunning("Rolling back \(kind.rawValue) \(name)…")
+        let service = KubernetesService(client: client, contextName: contextName)
+        do {
+            _ = try await service.rolloutUndo(resourceArgument: resourceArgument, in: namespace)
+            setOperationSuccess("Rolled back \(kind.rawValue) \(name)")
+        } catch {
+            setOperationError("Rollback failed: \(error.localizedDescription)")
+        }
+    }
+
     // MARK: - Download YAML
 
     func fetchResourceYAML(kind: ResourceKind, name: String, namespace: String?, client: KubernetesClient) async throws -> String {
@@ -937,6 +987,10 @@ final class ResourceListViewModel {
         extra["node"] = pod.spec?.nodeName ?? ""
         extra["ip"] = pod.status?.podIP ?? ""
         extra["container"] = pod.spec?.containers.first?.name ?? ""
+        extra["portNumbers"] = (pod.spec?.containers ?? [])
+            .flatMap { $0.ports ?? [] }
+            .map { String($0.containerPort) }
+            .joined(separator: ",")
         extra["cpu"] = "-"
         extra["memory"] = "-"
         extra["containers"] = "\(readiness.ready)/\(readiness.total)"

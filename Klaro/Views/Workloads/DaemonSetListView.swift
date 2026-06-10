@@ -59,6 +59,28 @@ struct DaemonSetListView: View {
                     guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
                     await viewModel.downloadResourceYAML(kind: .daemonSet, name: resource.name, namespace: resource.namespace, client: client)
                 }
+            },
+            extraActions: { resource in
+                [
+                    ResourceRowAction(
+                        title: "Rollback to Previous Revision",
+                        icon: "arrow.uturn.backward",
+                        isDestructive: true,
+                        needsConfirmation: true,
+                        confirmationMessage: "Rolls \(resource.name) back to its previous revision (kubectl rollout undo)."
+                    ) {
+                        Task {
+                            guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                            await viewModel.rolloutUndo(
+                                kind: .daemonSet,
+                                name: resource.name,
+                                namespace: resource.namespace,
+                                client: client,
+                                contextName: appState.activeCluster?.contextName
+                            )
+                        }
+                    }
+                ]
             }
         )
         .task {

@@ -29,6 +29,18 @@ struct ResourceTableColumn: Sendable {
     var isFlexible: Bool { idealWidth == nil }
 }
 
+/// An extra, caller-defined row action exposed in both the context menu and
+/// the "..." actions menu (kept in sync per the UI consistency contract).
+struct ResourceRowAction: Identifiable {
+    let id = UUID()
+    let title: String
+    let icon: String
+    var isDestructive: Bool = false
+    var needsConfirmation: Bool = false
+    var confirmationMessage: String = ""
+    let handler: () -> Void
+}
+
 struct ResourceTableView: View {
     @Environment(AppState.self) private var appState
     let columns: [ResourceTableColumn]
@@ -40,6 +52,7 @@ struct ResourceTableView: View {
     var onScale: ((ResourceItem, Int) -> Void)?
     var onRestart: ((ResourceItem) -> Void)?
     var onDownloadYAML: ((ResourceItem) -> Void)?
+    var extraActions: ((ResourceItem) -> [ResourceRowAction])?
     var deleteConfirmationMessageBuilder: ((ResourceItem) -> String)? = nil
     /// Optional custom cell renderer. Return a view for custom rendering, or nil for default.
     var customCellRenderer: ((ResourceTableColumn, ResourceItem) -> AnyView?)?
@@ -65,13 +78,18 @@ struct ResourceTableView: View {
     @State private var resourceToRestart: ResourceItem?
     @State private var showRestartConfirmation = false
 
+    // Extra action confirmation
+    @State private var pendingConfirmAction: ResourceRowAction?
+    @State private var showActionConfirmation = false
+
     /// Width of the fixed actions column ("..." button).
     private let actionsColumnWidth: CGFloat = 36
 
     /// Whether this table has any action callbacks configured.
     private var hasActions: Bool {
         onViewLogs != nil || onShell != nil || onViewYAML != nil ||
-        onDelete != nil || onScale != nil || onRestart != nil || onDownloadYAML != nil
+        onDelete != nil || onScale != nil || onRestart != nil || onDownloadYAML != nil ||
+        extraActions != nil
     }
 
     var body: some View {
@@ -127,6 +145,24 @@ struct ResourceTableView: View {
             }
         } message: {
             Text("This will trigger a rolling restart of all pods.")
+        }
+        .confirmationDialog(
+            pendingConfirmAction?.title ?? "",
+            isPresented: $showActionConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(
+                pendingConfirmAction?.title ?? "Confirm",
+                role: pendingConfirmAction?.isDestructive == true ? .destructive : nil
+            ) {
+                pendingConfirmAction?.handler()
+                pendingConfirmAction = nil
+            }
+            Button("Cancel", role: .cancel) {
+                pendingConfirmAction = nil
+            }
+        } message: {
+            Text(pendingConfirmAction?.confirmationMessage ?? "")
         }
         .sheet(item: $resourceToScale) { resource in
             ScaleSheetView(
@@ -390,6 +426,9 @@ struct ResourceTableView: View {
                         flatContent(contentWidth: needsHorizontalScroll ? contentWidth : nil)
                     }
                 }
+                // Two-axis ScrollViews center content smaller than the viewport;
+                // pin it to the top so short result sets don't float mid-screen.
+                .frame(minHeight: geometry.size.height, alignment: .topLeading)
             }
             .onAppear {
                 availableWidth = geometry.size.width
@@ -724,7 +763,23 @@ struct ResourceTableView: View {
             }
         }
 
-        if onShell != nil || onViewLogs != nil || onScale != nil || onRestart != nil {
+        if let extraActions {
+            let actions = extraActions(resource)
+            ForEach(actions) { action in
+                Button(role: action.isDestructive ? .destructive : nil) {
+                    if action.needsConfirmation {
+                        pendingConfirmAction = action
+                        showActionConfirmation = true
+                    } else {
+                        action.handler()
+                    }
+                } label: {
+                    Label(action.title, systemImage: action.icon)
+                }
+            }
+        }
+
+        if onShell != nil || onViewLogs != nil || onScale != nil || onRestart != nil || extraActions != nil {
             Divider()
         }
 

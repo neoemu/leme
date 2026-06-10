@@ -1268,6 +1268,42 @@ actor KubernetesService {
         _ = try await client.appsV1.daemonSets.update(inNamespace: ns, resource)
     }
 
+    // MARK: - Node Operations
+
+    /// Marks a node as (un)schedulable — kubectl cordon / uncordon.
+    func setNodeUnschedulable(name: String, unschedulable: Bool) async throws {
+        var node = try await client.clusterScoped(for: core.v1.Node.self).get(name: name)
+        if node.spec == nil {
+            node.spec = core.v1.NodeSpec()
+        }
+        node.spec?.unschedulable = unschedulable
+        _ = try await client.clusterScoped(for: core.v1.Node.self).update(node)
+    }
+
+    /// Drains a node via kubectl (cordons it and evicts pods).
+    func drainNode(name: String) async throws -> String {
+        let output = try await executeKubectl(arguments: [
+            "drain", name,
+            "--ignore-daemonsets",
+            "--delete-emptydir-data",
+            "--force",
+            "--timeout=300s",
+        ])
+        return output.stdout
+    }
+
+    // MARK: - Rollout Operations
+
+    /// Rolls a workload back to its previous revision — kubectl rollout undo.
+    func rolloutUndo(resourceArgument: String, in namespace: String?) async throws -> String {
+        var arguments = ["rollout", "undo", resourceArgument]
+        if let namespace, !namespace.isEmpty {
+            arguments.append(contentsOf: ["-n", namespace])
+        }
+        let output = try await executeKubectl(arguments: arguments)
+        return output.stdout
+    }
+
     // MARK: - Pod-Specific Operations
 
     /// Fetches logs for a pod (non-streaming).

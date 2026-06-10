@@ -95,6 +95,9 @@ final class ResourceDetailViewModel {
     var events: [ResourceItem] = []
     var nodeOverview: NodeOverview?
     var nodeMetricsHistory: [NodeMetricsHistoryPoint] = []
+    // Secret payload (base64-encoded, as stored in the cluster)
+    var secretData: [String: String] = [:]
+    var secretType: String = ""
 
     private let kubernetesService: KubernetesService
     private var nodeMetricsRefreshTask: Task<Void, Never>?
@@ -163,6 +166,30 @@ final class ResourceDetailViewModel {
     }
 
     // MARK: - Load Generic Detail
+
+    func loadSecretDetail(name: String, namespace: String) async {
+        isLoading = true
+        errorMessage = nil
+        stopNodeMetricsRefresh()
+        nodeOverview = nil
+        nodeMetricsHistory = []
+        secretData = [:]
+        do {
+            let secret = try await kubernetesService.get(core.v1.Secret.self, name: name, in: namespace)
+            extractMetadata(from: secret)
+            secretData = secret.data ?? [:]
+            secretType = secret.type ?? "Opaque"
+            do {
+                resourceYAML = try await kubernetesService.getYAML(secret)
+            } catch {
+                resourceYAML = "# Error loading YAML: \(error.localizedDescription)"
+            }
+            await loadEvents(forResource: name, namespace: namespace)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        isLoading = false
+    }
 
     func loadDetail<R: KubernetesAPIResource & NamespacedResource & ReadableResource & Encodable>(
         _ type: R.Type,

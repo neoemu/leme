@@ -4,6 +4,8 @@ import SwiftUI
 struct MainLayout: View {
     @Environment(AppState.self) private var appState
     @Environment(ClusterViewModel.self) private var clusterViewModel
+    @Environment(PortForwardManager.self) private var portForwardManager
+    @State private var isPortForwardPopoverPresented = false
 
     var body: some View {
         @Bindable var appState = appState
@@ -77,12 +79,34 @@ struct MainLayout: View {
             ToolbarItemGroup(placement: .primaryAction) {
                 Button {
                     Task {
-                        await clusterViewModel.loadContexts(appState: appState)
+                        await clusterViewModel.reloadContexts(appState: appState)
                     }
                 } label: {
                     Label("Reload Kubeconfig", systemImage: "arrow.clockwise")
                 }
                 .help("Reload kubeconfig")
+
+                Button {
+                    isPortForwardPopoverPresented.toggle()
+                } label: {
+                    Label("Port Forwards", systemImage: "rectangle.connected.to.line.below")
+                        .symbolRenderingMode(.hierarchical)
+                }
+                .overlay(alignment: .topTrailing) {
+                    if portForwardManager.activeCount > 0 {
+                        Text("\(portForwardManager.activeCount)")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(Capsule().fill(Theme.Colors.accent))
+                            .offset(x: 6, y: -4)
+                    }
+                }
+                .help("Active port forwards")
+                .popover(isPresented: $isPortForwardPopoverPresented, arrowEdge: .bottom) {
+                    PortForwardListPopover()
+                }
 
                 Button {
                     if appState.isYAMLEditorOpen {

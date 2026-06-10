@@ -66,6 +66,38 @@ struct NodeListView: View {
                     await viewModel.downloadResourceYAML(kind: .node, name: resource.name, namespace: resource.namespace, client: client)
                 }
             },
+            extraActions: { resource in
+                let isCordoned = resource.extraColumns["unschedulable"] == "true"
+                return [
+                    ResourceRowAction(
+                        title: isCordoned ? "Uncordon" : "Cordon",
+                        icon: isCordoned ? "play.circle" : "pause.circle"
+                    ) {
+                        Task {
+                            guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                            await viewModel.setNodeSchedulable(name: resource.name, unschedulable: !isCordoned, client: client)
+                            await loadData(showLoading: false)
+                        }
+                    },
+                    ResourceRowAction(
+                        title: "Drain…",
+                        icon: "arrow.down.right.circle",
+                        isDestructive: true,
+                        needsConfirmation: true,
+                        confirmationMessage: "Drain cordons \(resource.name) and evicts all pods (ignoring DaemonSets, deleting emptyDir data). Workloads will reschedule on other nodes."
+                    ) {
+                        Task {
+                            guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                            await viewModel.drainNode(
+                                name: resource.name,
+                                client: client,
+                                contextName: appState.activeCluster?.contextName
+                            )
+                            await loadData(showLoading: false)
+                        }
+                    },
+                ]
+            },
             customCellRenderer: { column, resource in
                 nodeCellRenderer(column: column, resource: resource)
             }
@@ -318,11 +350,15 @@ struct NodeListView: View {
         // Determine status from conditions
         let conditions = node.status?.conditions ?? []
         let readyCondition = conditions.first { $0.type == "Ready" }
-        let status: String
+        let isUnschedulable = node.spec?.unschedulable == true
+        var status: String
         if readyCondition?.status == "True" {
             status = "Ready"
         } else {
             status = "NotReady"
+        }
+        if isUnschedulable {
+            status += ",SchedulingDisabled"
         }
 
         // Extract roles from labels
@@ -364,6 +400,7 @@ struct NodeListView: View {
         extra["internalIP"] = internalIP
         extra["os"] = os
         extra["taints"] = taintsStr
+        extra["unschedulable"] = isUnschedulable ? "true" : "false"
 
         return ResourceItem(
             id: nodeName.isEmpty ? UUID().uuidString : nodeName,

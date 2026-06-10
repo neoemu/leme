@@ -22,6 +22,7 @@
 		26F2112B67E38745E46053DF /* ResourceKind.swift in Sources */ = {isa = PBXBuildFile; fileRef = 489D6D801DEABA8BDEA173CA /* ResourceKind.swift */; };
 		2988F6C4D0A7812F9D2DC117 /* ExecService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5466252AE0DB6AD9415B8039 /* ExecService.swift */; };
 		2A2B8750D898030788471A70 /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = B036DCE27351E283D659104A /* SwiftTerm */; };
+		2A4B1F6D3D9ED5D469545623 /* PortForwardSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43772F9D96F34FE50DE0820A /* PortForwardSheet.swift */; };
 		2A8101C9A30591EAB085E8AC /* StorageClassListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6F5D0789ED78B3A27B06129 /* StorageClassListView.swift */; };
 		2AB65B95A554DEEE673B408D /* DeploymentListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED6BA8879CE2825DCC38A072 /* DeploymentListView.swift */; };
 		2C6CF683D46A4AD06CF880FA /* TerminalViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D58CD3E1D4EE25DA821F941C /* TerminalViewModel.swift */; };
@@ -63,6 +64,7 @@
 		9ED138A87E003CD900819B19 /* CommandPaletteViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 250E5280FACCF9F3AA5181FB /* CommandPaletteViewModel.swift */; };
 		A52968A5A61FE248386AB2A2 /* RoleBindingListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29C057233614C09882A99461 /* RoleBindingListView.swift */; };
 		A5E9DE7048465561BF4A43F9 /* PodLogsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C93A2EF69638DF57E2F27EB /* PodLogsViewModel.swift */; };
+		A91F0F69439877AE0A025076 /* PortForwardManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D114660B2DE722C998AFCCED /* PortForwardManager.swift */; };
 		ABFA129C2002E6E7E5FA7A07 /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C1D3B63F337725B28044A8D /* SidebarView.swift */; };
 		AF5DB658219D747ECD0034A3 /* ConfigMapListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 604C0BFFD4A4D4ADA9B2F7F0 /* ConfigMapListView.swift */; };
 		B18D22B189A6F1459ECFDE66 /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68E2566AB0D84080AACFDEC3 /* Constants.swift */; };
@@ -134,6 +136,7 @@
 		36D600C301CE69DE3206C95A /* IngressListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IngressListView.swift; sourceTree = "<group>"; };
 		3F267A3D222C2E036ABA07C0 /* AgeLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgeLabel.swift; sourceTree = "<group>"; };
 		422FC34F828A95DFA80BDD30 /* ClusterRoleBindingListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClusterRoleBindingListView.swift; sourceTree = "<group>"; };
+		43772F9D96F34FE50DE0820A /* PortForwardSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortForwardSheet.swift; sourceTree = "<group>"; };
 		43909A0BC026C8C2D10E6702 /* InspectorDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InspectorDetailView.swift; sourceTree = "<group>"; };
 		450B8457971C95902DAFC7BA /* ClusterSwitcherView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClusterSwitcherView.swift; sourceTree = "<group>"; };
 		489D6D801DEABA8BDEA173CA /* ResourceKind.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResourceKind.swift; sourceTree = "<group>"; };
@@ -184,6 +187,7 @@
 		CBB9954C98141BAAEAA37862 /* BottomPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomPanelView.swift; sourceTree = "<group>"; };
 		CE85CE982D0E2AFAC9101877 /* KlaroUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KlaroUITests.swift; sourceTree = "<group>"; };
 		D06D982F1414C38249A2CC1E /* CommandPaletteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandPaletteView.swift; sourceTree = "<group>"; };
+		D114660B2DE722C998AFCCED /* PortForwardManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortForwardManager.swift; sourceTree = "<group>"; };
 		D228E35DB21CD5108775C47D /* ResourceWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResourceWatcher.swift; sourceTree = "<group>"; };
 		D4140F1FF55C831B0DB23CC2 /* PodDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PodDetailView.swift; sourceTree = "<group>"; };
 		D58CD3E1D4EE25DA821F941C /* TerminalViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalViewModel.swift; sourceTree = "<group>"; };
@@ -310,6 +314,7 @@
 				ABDFF55C6B6C2AF8C0A9DE9A /* KubernetesService.swift */,
 				5C6A80AB1BF018CA02D34CA8 /* LogStreamService.swift */,
 				714692D8F205046CF077FB76 /* MetricsService.swift */,
+				D114660B2DE722C998AFCCED /* PortForwardManager.swift */,
 				D228E35DB21CD5108775C47D /* ResourceWatcher.swift */,
 			);
 			path = Services;
@@ -391,6 +396,7 @@
 				5CBE551EF94504FE22A9D30A /* LabelBadgeList.swift */,
 				F7D3AC4DB90F3440AE29D692 /* LogViewerView.swift */,
 				244244F43B21EBFC4648FFE4 /* NamespaceFilterView.swift */,
+				43772F9D96F34FE50DE0820A /* PortForwardSheet.swift */,
 				998AB0A6AAEF283E7C5BB999 /* ResourceDetailPanel.swift */,
 				228D79C917922B011A93A7BD /* ResourceTableView.swift */,
 				B279D795393EEC25B531B69A /* StatusBadge.swift */,
@@ -672,6 +678,8 @@
 				9DCFC9F5F4A586888E1D6E59 /* PodDetailView.swift in Sources */,
 				66E8AFF05CD4D86E61C0F6B4 /* PodListView.swift in Sources */,
 				A5E9DE7048465561BF4A43F9 /* PodLogsViewModel.swift in Sources */,
+				A91F0F69439877AE0A025076 /* PortForwardManager.swift in Sources */,
+				2A4B1F6D3D9ED5D469545623 /* PortForwardSheet.swift in Sources */,
 				FDA68CB8D194BD778BDF7253 /* Quantity+Parsing.swift in Sources */,
 				77D95599CD5D015B5A60A906 /* ReplicaSetListView.swift in Sources */,
 				CCD2B0EA6A5B8D98623B464D /* ResourceCategory.swift in Sources */,

@@ -5,7 +5,9 @@ import SwiftkubeModel
 struct ServiceListView: View {
     @Environment(AppState.self) private var appState
     @Environment(ClusterViewModel.self) private var clusterViewModel
+    @Environment(PortForwardManager.self) private var portForwardManager
     @State private var viewModel = ResourceListViewModel()
+    @State private var portForwardTarget: ResourceItem?
 
     private let columns: [ResourceTableColumn] = [
         ResourceTableColumn(title: "Name", key: "name", sortField: .name),
@@ -51,8 +53,36 @@ struct ServiceListView: View {
                     guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
                     await viewModel.downloadResourceYAML(kind: .service, name: resource.name, namespace: resource.namespace, client: client)
                 }
+            },
+            extraActions: { resource in
+                [
+                    ResourceRowAction(title: "Port Forward…", icon: "rectangle.connected.to.line.below") {
+                        portForwardTarget = resource
+                    }
+                ]
             }
         )
+        .sheet(item: $portForwardTarget) { resource in
+            PortForwardSheet(
+                targetKind: "service",
+                targetName: resource.name,
+                namespace: resource.namespace ?? appState.selectedNamespace ?? "default",
+                suggestedPorts: (resource.extraColumns["portNumbers"] ?? "")
+                    .split(separator: ",")
+                    .compactMap { Int($0) }
+            ) { localPort, remotePort in
+                portForwardManager.start(
+                    target: "service/\(resource.name)",
+                    namespace: resource.namespace ?? appState.selectedNamespace ?? "default",
+                    localPort: localPort,
+                    remotePort: remotePort,
+                    contextName: appState.activeCluster?.contextName
+                )
+                portForwardTarget = nil
+            } onCancel: {
+                portForwardTarget = nil
+            }
+        }
         .task { await loadData() }
         .onChange(of: appState.activeClusterID) { _, _ in
             Task { await loadData() }
@@ -95,6 +125,9 @@ struct ServiceListView: View {
                 "type": serviceType,
                 "clusterIP": clusterIP,
                 "ports": ports,
+                "portNumbers": (resource.spec?.ports ?? [])
+                    .map { String($0.port) }
+                    .joined(separator: ","),
             ]
         )
     }

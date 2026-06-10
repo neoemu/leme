@@ -126,7 +126,7 @@ struct InspectorDetailView: View {
             case .configMap:
                 await detail.loadDetail(core.v1.ConfigMap.self, name: name, namespace: namespace ?? "default")
             case .secret:
-                await detail.loadDetail(core.v1.Secret.self, name: name, namespace: namespace ?? "default")
+                await detail.loadSecretDetail(name: name, namespace: namespace ?? "default")
 
             // Storage (namespaced)
             case .persistentVolumeClaim:

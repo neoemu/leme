@@ -4,8 +4,10 @@ import SwiftkubeClient
 struct PodListView: View {
     @Environment(AppState.self) private var appState
     @Environment(ClusterViewModel.self) private var clusterViewModel
+    @Environment(PortForwardManager.self) private var portForwardManager
     @State private var viewModel = ResourceListViewModel()
     @State private var detailViewModel: ResourceDetailViewModel?
+    @State private var portForwardTarget: ResourceItem?
 
     private let columns: [ResourceTableColumn] = [
         ResourceTableColumn(title: "Name", key: "name", sortField: .name),
@@ -82,8 +84,36 @@ struct PodListView: View {
                     await viewModel.downloadResourceYAML(kind: .pod, name: resource.name, namespace: resource.namespace, client: client)
                 }
             },
+            extraActions: { resource in
+                [
+                    ResourceRowAction(title: "Port Forward…", icon: "rectangle.connected.to.line.below") {
+                        portForwardTarget = resource
+                    }
+                ]
+            },
             customCellRenderer: podCellRenderer
         )
+        .sheet(item: $portForwardTarget) { resource in
+            PortForwardSheet(
+                targetKind: "pod",
+                targetName: resource.name,
+                namespace: resource.namespace ?? appState.selectedNamespace ?? "default",
+                suggestedPorts: (resource.extraColumns["portNumbers"] ?? "")
+                    .split(separator: ",")
+                    .compactMap { Int($0) }
+            ) { localPort, remotePort in
+                portForwardManager.start(
+                    target: "pod/\(resource.name)",
+                    namespace: resource.namespace ?? appState.selectedNamespace ?? "default",
+                    localPort: localPort,
+                    remotePort: remotePort,
+                    contextName: appState.activeCluster?.contextName
+                )
+                portForwardTarget = nil
+            } onCancel: {
+                portForwardTarget = nil
+            }
+        }
         .task {
             await loadPods()
         }
