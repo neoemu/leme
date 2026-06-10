@@ -73,7 +73,7 @@ struct NetworkPolicyListView: View {
     }
 
     private nonisolated func networkPolicyToResourceItem(_ np: networking.v1.NetworkPolicy) -> ResourceItem {
-        let matchLabels = np.spec?.podSelector.matchLabels ?? [:]
+        let matchLabels = np.spec?.podSelector?.matchLabels ?? [:]
         let podSelector = matchLabels.isEmpty
             ? "<all>"
             : matchLabels.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: ", ")
