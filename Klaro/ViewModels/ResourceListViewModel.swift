@@ -781,6 +781,42 @@ final class ResourceListViewModel {
         }
     }
 
+    // MARK: - Workload Pod Resolution
+
+    /// Resolves the pods currently owned by a workload via its label selector.
+    func podNames(forWorkload kind: ResourceKind, name: String, namespace: String?, client: KubernetesClient) async -> [String] {
+        let service = KubernetesService(client: client)
+        do {
+            let matchLabels: [String: String]
+            switch kind {
+            case .deployment:
+                matchLabels = try await service.get(apps.v1.Deployment.self, name: name, in: namespace)
+                    .spec?.selector.matchLabels ?? [:]
+            case .statefulSet:
+                matchLabels = try await service.get(apps.v1.StatefulSet.self, name: name, in: namespace)
+                    .spec?.selector.matchLabels ?? [:]
+            case .daemonSet:
+                matchLabels = try await service.get(apps.v1.DaemonSet.self, name: name, in: namespace)
+                    .spec?.selector.matchLabels ?? [:]
+            default:
+                return []
+            }
+
+            guard !matchLabels.isEmpty else { return [] }
+
+            let pods = try await service.list(core.v1.Pod.self, in: namespace)
+            return pods.items
+                .filter { pod in
+                    let labels = pod.metadata?.labels ?? [:]
+                    return matchLabels.allSatisfy { labels[$0.key] == $0.value }
+                }
+                .compactMap(\.name)
+                .sorted()
+        } catch {
+            return []
+        }
+    }
+
     // MARK: - Rollout Undo
 
     func rolloutUndo(kind: ResourceKind, name: String, namespace: String?, client: KubernetesClient, contextName: String?) async {

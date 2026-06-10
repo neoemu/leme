@@ -68,6 +68,23 @@ struct DeploymentListView: View {
             },
             extraActions: { resource in
                 [
+                    ResourceRowAction(title: "View Logs (All Pods)", icon: "doc.text.below.ecg") {
+                        Task {
+                            guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                            let pods = await viewModel.podNames(
+                                forWorkload: .deployment,
+                                name: resource.name,
+                                namespace: resource.namespace,
+                                client: client
+                            )
+                            guard !pods.isEmpty else { return }
+                            appState.requestWorkloadLogs(
+                                workloadName: resource.name,
+                                podNames: pods,
+                                namespace: resource.namespace ?? "default"
+                            )
+                        }
+                    },
                     ResourceRowAction(
                         title: "Rollback to Previous Revision",
                         icon: "arrow.uturn.backward",

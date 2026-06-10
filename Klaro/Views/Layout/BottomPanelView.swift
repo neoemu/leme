@@ -397,11 +397,13 @@ struct BottomPanelView: View {
             return
         }
         let container = appState.logTargetContainer
+        let aggregatePods = appState.logTargetPodNames
 
         if let existing = logSessions.first(where: { session in
             session.podName == podName &&
             session.namespace == namespace &&
-            session.selectedContainer == container
+            session.selectedContainer == container &&
+            session.aggregatePodNames == aggregatePods
         }) {
             activeLogSessionID = existing.id
             startStreamingIfNeeded(for: existing)
@@ -413,6 +415,7 @@ struct BottomPanelView: View {
         if let container {
             vm.selectedContainer = container
         }
+        vm.aggregatePodNames = aggregatePods
         logSessions.append(vm)
         activeLogSessionID = vm.id
         startStreamingIfNeeded(for: vm)

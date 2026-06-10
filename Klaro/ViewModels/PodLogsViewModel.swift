@@ -18,9 +18,14 @@ final class PodLogsViewModel {
     var podName: String
     var namespace: String
     var errorMessage: String?
+    /// When non-empty, this session aggregates the logs of several pods
+    /// (workload logs); `podName` then holds the workload name.
+    var aggregatePodNames: [String] = []
 
     private var streamingTask: Task<Void, Never>?
     private var logStreamService: LogStreamService?
+    private var aggregateTasks: [Task<Void, Never>] = []
+    private var aggregateServices: [LogStreamService] = []
 
     // MARK: - Computed
 
@@ -31,6 +36,9 @@ final class PodLogsViewModel {
     }
 
     var tabTitle: String {
+        if !aggregatePodNames.isEmpty {
+            return "\(podName) (\(aggregatePodNames.count) pods)"
+        }
         if let container = selectedContainer, !container.isEmpty {
             return "\(podName):\(container)"
         }
@@ -47,6 +55,11 @@ final class PodLogsViewModel {
     // MARK: - Streaming
 
     func startStreaming(client: KubernetesClient) {
+        guard aggregatePodNames.isEmpty else {
+            startAggregateStreaming(client: client)
+            return
+        }
+
         stopStreaming()
 
         isStreaming = true
@@ -100,7 +113,56 @@ final class PodLogsViewModel {
             logStreamService = nil
         }
 
+        aggregateTasks.forEach { $0.cancel() }
+        aggregateTasks = []
+        for service in aggregateServices {
+            Task {
+                await service.stopStreaming()
+            }
+        }
+        aggregateServices = []
+
         isStreaming = false
+    }
+
+    // MARK: - Aggregate (Workload) Streaming
+
+    private func startAggregateStreaming(client: KubernetesClient) {
+        let pods = aggregatePodNames
+        stopStreaming()
+
+        isStreaming = true
+        errorMessage = nil
+
+        let ns = namespace
+        let timestamps = showTimestamps
+
+        for pod in pods {
+            let service = LogStreamService(client: client)
+            aggregateServices.append(service)
+
+            let task = Task { [weak self] in
+                do {
+                    let stream = try await service.streamLogs(
+                        podName: pod,
+                        namespace: ns,
+                        container: nil,
+                        timestamps: timestamps,
+                        tailLines: 50
+                    )
+
+                    for try await line in stream {
+                        guard !Task.isCancelled else { break }
+                        self?.appendLine("[\(pod)] \(line)")
+                    }
+                } catch {
+                    if !Task.isCancelled {
+                        self?.appendLine("[\(pod)] ⚠ stream error: \(error.localizedDescription)")
+                    }
+                }
+            }
+            aggregateTasks.append(task)
+        }
     }
 
     func clearLogs() {

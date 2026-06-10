@@ -81,10 +81,13 @@ final class AppState: @unchecked Sendable {
     var bottomPanelMode: BottomPanelMode = .logs
     var bottomPanelHeight: CGFloat = 250
     var isCommandPaletteOpen: Bool = false
+    var isGlobalSearchOpen: Bool = false
     var searchText: String = ""
     var logTargetPodName: String?
     var logTargetNamespace: String?
     var logTargetContainer: String?
+    /// When non-empty, the log request aggregates these pods (workload logs).
+    var logTargetPodNames: [String] = []
     var pendingPodLogsRequestID: UUID?
 
     // Terminal exec target
@@ -192,6 +195,17 @@ final class AppState: @unchecked Sendable {
         logTargetPodName = podName
         logTargetNamespace = namespace
         logTargetContainer = container
+        logTargetPodNames = []
+        pendingPodLogsRequestID = UUID()
+        openBottomPanel(mode: .logs)
+    }
+
+    /// Streams logs of all pods of a workload, stern-style.
+    func requestWorkloadLogs(workloadName: String, podNames: [String], namespace: String) {
+        logTargetPodName = workloadName
+        logTargetNamespace = namespace
+        logTargetContainer = nil
+        logTargetPodNames = podNames
         pendingPodLogsRequestID = UUID()
         openBottomPanel(mode: .logs)
     }
