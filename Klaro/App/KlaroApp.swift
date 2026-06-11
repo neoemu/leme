@@ -65,6 +65,9 @@ struct KlaroApp: App {
             width: Constants.defaultWindowWidth,
             height: Constants.defaultWindowHeight
         )
+        // Flat chrome: no native title bar band; the sidebar and content draw
+        // up to the window edge and the traffic lights float over the sidebar.
+        .windowStyle(.hiddenTitleBar)
         .commands {
             AppCommands(appState: appState)
         }

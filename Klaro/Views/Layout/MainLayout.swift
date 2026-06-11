@@ -8,6 +8,17 @@ struct MainLayout: View {
     @Environment(SettingsStore.self) private var settingsStore
     @State private var isPortForwardPopoverPresented = false
 
+    @AppStorage("sidebarPanelWidth") private var sidebarWidth: Double = 280
+    @AppStorage("sidebarPanelVisible") private var isSidebarVisible: Bool = true
+    /// Live width during drags; persisted to `sidebarWidth` only on drag end
+    /// (writing UserDefaults every tick makes the drag stutter).
+    @State private var sidebarLiveWidth: CGFloat = 280
+    @State private var sidebarDragStartWidth: Double?
+    @State private var isHoveringSidebarHandle = false
+
+    private static let sidebarMinWidth: Double = 230
+    private static let sidebarMaxWidth: Double = 400
+
     private var isProductionCluster: Bool {
         settingsStore.isProduction(appState.activeCluster)
     }
@@ -28,12 +39,44 @@ struct MainLayout: View {
     }
 
     var body: some View {
+        HStack(spacing: 0) {
+            if isSidebarVisible {
+                SidebarView()
+                    .frame(width: sidebarLiveWidth)
+                    .frame(maxHeight: .infinity)
+                    .background(Theme.Colors.sidebarBackground.ignoresSafeArea())
+
+                sidebarResizeHandle
+            }
+
+            detailColumn
+        }
+        .onAppear {
+            sidebarLiveWidth = CGFloat(min(max(sidebarWidth, Self.sidebarMinWidth), Self.sidebarMaxWidth))
+        }
+        .overlay {
+            if appState.isCommandPaletteOpen {
+                CommandPaletteView()
+                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+            }
+        }
+        .overlay {
+            if appState.isGlobalSearchOpen {
+                GlobalSearchView()
+                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+            }
+        }
+        .animation(.easeInOut(duration: 0.15), value: appState.isCommandPaletteOpen)
+        .animation(.easeInOut(duration: 0.15), value: appState.isGlobalSearchOpen)
+        .animation(.easeInOut(duration: 0.15), value: isSidebarVisible)
+    }
+
+    private var detailColumn: some View {
         @Bindable var appState = appState
 
-        NavigationSplitView {
-            SidebarView()
-        } detail: {
-            VStack(spacing: 0) {
+        return VStack(spacing: 0) {
+                detailTopBar
+
                 if isProductionCluster {
                     productionBanner
                 }
@@ -46,6 +89,8 @@ struct MainLayout: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Theme.Colors.contentBackground)
+            .ignoresSafeArea(.container, edges: .top)
             .animation(.easeInOut(duration: 0.2), value: appState.isBottomPanelOpen)
             .overlay {
                 if appState.isYAMLEditorOpen {
@@ -97,74 +142,133 @@ struct MainLayout: View {
             }
             .animation(.easeInOut(duration: 0.15), value: appState.isDetailPanelOpen)
             .animation(.easeInOut(duration: 0.15), value: appState.isYAMLEditorOpen)
-        }
-        .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 360)
-        .toolbar {
-            ToolbarItemGroup(placement: .primaryAction) {
-                Button {
-                    Task {
-                        await clusterViewModel.reloadContexts(appState: appState)
-                    }
-                } label: {
-                    Label("Reload Kubeconfig", systemImage: "arrow.clockwise")
-                }
-                .help("Reload kubeconfig")
+    }
 
-                Button {
-                    isPortForwardPopoverPresented.toggle()
-                } label: {
-                    Label("Port Forwards", systemImage: "rectangle.connected.to.line.below")
-                        .symbolRenderingMode(.hierarchical)
-                }
-                .overlay(alignment: .topTrailing) {
-                    if portForwardManager.activeCount > 0 {
-                        Text("\(portForwardManager.activeCount)")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1)
-                            .background(Capsule().fill(Theme.Colors.accent))
-                            .offset(x: 6, y: -4)
-                    }
-                }
-                .help("Active port forwards")
-                .popover(isPresented: $isPortForwardPopoverPresented, arrowEdge: .bottom) {
-                    PortForwardListPopover()
-                }
+    /// Thin action strip occupying the (hidden) title bar band, Codex-style.
+    private var detailTopBar: some View {
+        HStack(spacing: 16) {
+            Button {
+                isSidebarVisible.toggle()
+            } label: {
+                Image(systemName: "sidebar.left")
+                    .font(.system(size: 13, weight: .medium))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Theme.Colors.secondaryText)
+            .help("Toggle sidebar")
+            // Keep clear of the traffic lights when the sidebar is collapsed.
+            .padding(.leading, isSidebarVisible ? 0 : 74)
 
-                Button {
-                    if appState.isYAMLEditorOpen {
-                        appState.closeYAMLEditor()
-                    } else {
-                        appState.isDetailPanelOpen.toggle()
-                    }
-                } label: {
-                    Label("Toggle Inspector", systemImage: "sidebar.trailing")
-                }
-                .help("Toggle inspector panel")
+            Spacer()
 
-                Button {
-                    // Settings action placeholder
-                } label: {
-                    Label("Settings", systemImage: "gear")
+            Button {
+                Task {
+                    await clusterViewModel.reloadContexts(appState: appState)
                 }
-                .help("Settings")
+            } label: {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 12, weight: .medium))
             }
-        }
-        .overlay {
-            if appState.isCommandPaletteOpen {
-                CommandPaletteView()
-                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+            .buttonStyle(.plain)
+            .foregroundStyle(Theme.Colors.secondaryText)
+            .help("Reload kubeconfig")
+
+            Button {
+                isPortForwardPopoverPresented.toggle()
+            } label: {
+                Image(systemName: "rectangle.connected.to.line.below")
+                    .font(.system(size: 12, weight: .medium))
+                    .symbolRenderingMode(.hierarchical)
             }
-        }
-        .overlay {
-            if appState.isGlobalSearchOpen {
-                GlobalSearchView()
-                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+            .buttonStyle(.plain)
+            .foregroundStyle(Theme.Colors.secondaryText)
+            .overlay(alignment: .topTrailing) {
+                if portForwardManager.activeCount > 0 {
+                    Text("\(portForwardManager.activeCount)")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(Capsule().fill(Theme.Colors.accent))
+                        .offset(x: 8, y: -6)
+                }
             }
+            .help("Active port forwards")
+            .popover(isPresented: $isPortForwardPopoverPresented, arrowEdge: .bottom) {
+                PortForwardListPopover()
+            }
+
+            Button {
+                if appState.isYAMLEditorOpen {
+                    appState.closeYAMLEditor()
+                } else {
+                    appState.isDetailPanelOpen.toggle()
+                }
+            } label: {
+                Image(systemName: "sidebar.trailing")
+                    .font(.system(size: 13, weight: .medium))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Theme.Colors.secondaryText)
+            .help("Toggle inspector panel")
+
+            SettingsLink {
+                Image(systemName: "gear")
+                    .font(.system(size: 12, weight: .medium))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Theme.Colors.secondaryText)
+            .help("Settings")
         }
-        .animation(.easeInOut(duration: 0.15), value: appState.isCommandPaletteOpen)
-        .animation(.easeInOut(duration: 0.15), value: appState.isGlobalSearchOpen)
+        .padding(.horizontal, Theme.Dimensions.padding)
+        .frame(height: 38)
+    }
+
+    /// Hairline divider between sidebar and content. It only occupies 1pt of
+    /// layout; the draggable hit area is a wider invisible overlay so no dark
+    /// gap shows between the panels.
+    private var sidebarResizeHandle: some View {
+        Rectangle()
+            .fill(Color.white.opacity(0.07))
+            .frame(width: 1)
+            .frame(maxHeight: .infinity)
+            .ignoresSafeArea(.container, edges: .top)
+            .overlay {
+                Color.clear
+                    .frame(width: 9)
+                    .contentShape(Rectangle())
+                    .onHover { hovering in
+                        guard hovering != isHoveringSidebarHandle else { return }
+                        if hovering { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+                        isHoveringSidebarHandle = hovering
+                    }
+                    .gesture(
+                        // Global coordinates: the handle moves while dragging,
+                        // so local translations feed back into the gesture and
+                        // make the resize flicker.
+                        DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                            .onChanged { value in
+                                if sidebarDragStartWidth == nil {
+                                    sidebarDragStartWidth = Double(sidebarLiveWidth)
+                                }
+                                guard let startWidth = sidebarDragStartWidth else { return }
+                                let proposed = startWidth + value.translation.width
+                                let clamped = min(max(proposed, Self.sidebarMinWidth), Self.sidebarMaxWidth)
+                                let snapped = (clamped / 2).rounded() * 2
+
+                                var transaction = Transaction()
+                                transaction.disablesAnimations = true
+                                withTransaction(transaction) {
+                                    sidebarLiveWidth = CGFloat(snapped)
+                                }
+                            }
+                            .onEnded { _ in
+                                sidebarDragStartWidth = nil
+                                sidebarWidth = Double(sidebarLiveWidth)
+                            }
+                    )
+            }
+            .accessibilityLabel("Resize sidebar")
     }
 }
 

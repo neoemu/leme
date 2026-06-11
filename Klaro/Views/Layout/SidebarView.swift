@@ -191,107 +191,65 @@ struct SidebarView: View {
     private func sidebarSection<Content: View>(title: String, id: String, @ViewBuilder content: () -> Content) -> some View {
         let isExpanded = expandedSections.contains(id)
 
-        VStack(spacing: 0) {
+        VStack(alignment: .leading, spacing: 2) {
             Button {
                 toggleSection(id)
             } label: {
-                HStack(spacing: Theme.Dimensions.spacing) {
+                HStack(spacing: Theme.Dimensions.smallSpacing) {
                     Text(title)
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(Theme.Colors.sidebarText)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Theme.Colors.sidebarMutedText.opacity(0.85))
+
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(Theme.Colors.sidebarMutedText.opacity(0.55))
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
 
                     Spacer()
-
-                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Theme.Colors.sidebarMutedText)
                 }
                 .padding(.horizontal, Theme.Dimensions.padding)
-                .padding(.vertical, 10)
+                .padding(.vertical, 6)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    isExpanded
-                        ? Theme.Colors.sidebarExpandedHeaderBackground
-                        : Color.clear
-                )
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .frame(maxWidth: .infinity, alignment: .leading)
 
             if isExpanded {
-                VStack(spacing: 4) {
+                VStack(spacing: 1) {
                     content()
                 }
                 .padding(.horizontal, Theme.Dimensions.smallSpacing)
-                .padding(.vertical, Theme.Dimensions.smallSpacing)
-                .background(Theme.Colors.sidebarExpandedHeaderBackground.opacity(0.60))
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .padding(.bottom, 1)
-        .background(
-            Theme.Colors.sidebarSectionBackground
-        )
+        .padding(.bottom, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
     private func row(
         title: String,
-        icon _: String,
+        icon: String,
         selection: SidebarSelection,
         countKind: ResourceKind? = nil,
         countOverride: Int? = nil
     ) -> some View {
-        let isSelected = appState.sidebarSelection == selection
-        let count = countOverride ?? (countKind.flatMap { kindCounts[$0] })
-
-        Button {
+        SidebarItemRow(
+            title: title,
+            icon: icon,
+            isSelected: appState.sidebarSelection == selection,
+            count: countOverride ?? (countKind.flatMap { kindCounts[$0] })
+        ) {
             appState.sidebarSelection = selection
-        } label: {
-            HStack(spacing: Theme.Dimensions.spacing) {
-                Text(title)
-                    .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
-                    .foregroundStyle(isSelected ? Theme.Colors.sidebarText : Theme.Colors.sidebarMutedText)
-                    .lineLimit(1)
-                    .multilineTextAlignment(.leading)
-
-                Spacer(minLength: 8)
-
-                if let count {
-                    HStack(spacing: 4) {
-                        Image(systemName: "point.3.connected.trianglepath.dotted")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(
-                                isSelected
-                                    ? Theme.Colors.sidebarText.opacity(0.9)
-                                    : Theme.Colors.sidebarMutedText.opacity(0.85)
-                            )
-                        Text("\(count)")
-                            .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                    }
-                    .foregroundStyle(isSelected ? Theme.Colors.sidebarText : Theme.Colors.sidebarMutedText)
-                }
-            }
-            .padding(.leading, 16)
-            .padding(.trailing, 12)
-            .padding(.vertical, 6)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                isSelected ? Theme.Colors.sidebarSelectionBackground : Color.clear
-            )
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
     private func crdGroup(title: String, definitions: [CustomResourceDefinitionInfo]) -> some View {
         let isExpanded = expandedCRDGroups.contains(title)
 
-        VStack(spacing: 4) {
+        VStack(spacing: 1) {
             Button {
                 if isExpanded {
                     expandedCRDGroups.remove(title)
@@ -299,25 +257,23 @@ struct SidebarView: View {
                     expandedCRDGroups.insert(title)
                 }
             } label: {
-                HStack(spacing: Theme.Dimensions.spacing) {
+                HStack(spacing: Theme.Dimensions.smallSpacing) {
                     Text(title)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Theme.Colors.sidebarMutedText)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Theme.Colors.sidebarMutedText.opacity(0.8))
                         .lineLimit(1)
+                        .truncationMode(.middle)
+
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(Theme.Colors.sidebarMutedText.opacity(0.55))
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
 
                     Spacer()
-
-                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.Colors.sidebarMutedText)
                 }
-                .padding(.leading, 16)
-                .padding(.trailing, 12)
-                .padding(.vertical, 6)
+                .padding(.horizontal, Theme.Dimensions.smallSpacing)
+                .padding(.vertical, 5)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    Color.white.opacity(0.015)
-                )
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -467,6 +423,56 @@ struct SidebarView: View {
             }
         }
         crdCounts = loadedCRDCounts
+    }
+
+    fileprivate struct SidebarItemRow: View {
+        let title: String
+        let icon: String
+        let isSelected: Bool
+        let count: Int?
+        let action: () -> Void
+
+        @State private var isHovering = false
+
+        var body: some View {
+            Button(action: action) {
+                HStack(spacing: Theme.Dimensions.spacing) {
+                    Image(systemName: icon)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(isSelected ? Theme.Colors.sidebarText : Theme.Colors.sidebarMutedText.opacity(0.85))
+                        .frame(width: 17)
+
+                    Text(title)
+                        .font(.system(size: 13, weight: isSelected ? .medium : .regular))
+                        .foregroundStyle(isSelected ? Theme.Colors.sidebarText : Theme.Colors.sidebarMutedText)
+                        .lineLimit(1)
+                        .multilineTextAlignment(.leading)
+
+                    Spacer(minLength: 8)
+
+                    if let count {
+                        Text("\(count)")
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .foregroundStyle(Theme.Colors.sidebarMutedText.opacity(0.8))
+                    }
+                }
+                .padding(.horizontal, Theme.Dimensions.smallSpacing + 2)
+                .padding(.vertical, 5)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(
+                            isSelected
+                                ? Theme.Colors.sidebarSelectionBackground
+                                : isHovering ? Theme.Colors.sidebarHoverBackground : Color.clear
+                        )
+                )
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .onHover { isHovering = $0 }
+        }
     }
 
     private func countFor(kind: ResourceKind, service: KubernetesService, namespace: String?) async -> Int? {
