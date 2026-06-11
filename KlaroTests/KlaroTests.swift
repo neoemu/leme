@@ -274,6 +274,57 @@ import Testing
     #expect(event.metadata?.name == nil)
 }
 
+@Test func yamlScalarTypePreservation() throws {
+    // Quoted scalars must stay strings; only plain scalars resolve to types.
+    let documents = try KubernetesService.yamlDocuments(from: """
+    quotedNumber: "123456"
+    plainNumber: 123456
+    quotedBool: "true"
+    plainBool: true
+    quotedFloat: "1.5"
+    plainFloat: 1.5
+    plainString: hello
+    """)
+    let doc = try #require(documents.first)
+
+    #expect(doc["quotedNumber"] as? String == "123456")
+    #expect(doc["plainNumber"] as? Int == 123456)
+    #expect(doc["quotedBool"] as? String == "true")
+    #expect(doc["plainBool"] as? Bool == true)
+    #expect(doc["quotedFloat"] as? String == "1.5")
+    #expect(doc["plainFloat"] as? Double == 1.5)
+    #expect(doc["plainString"] as? String == "hello")
+}
+
+@Test func yamlDiffHunks() {
+    let original = """
+    a: 1
+    b: 2
+    c: 3
+    d: 4
+    e: 5
+    f: 6
+    g: 7
+    h: 8
+    i: 9
+    j: 10
+    """
+    let edited = original.replacingOccurrences(of: "i: 9", with: "i: 99")
+
+    let lines = YAMLDiff.hunks(original: original, edited: edited)
+    let counts = YAMLDiff.changeCounts(lines)
+    #expect(counts.added == 1)
+    #expect(counts.removed == 1)
+    #expect(lines.contains { if case .gap = $0.kind { return true } else { return false } })
+    #expect(lines.contains { $0.text == "i: 99" })
+    #expect(lines.contains { $0.text == "i: 9" })
+}
+
+@Test func yamlDiffNoChanges() {
+    let yaml = "a: 1\nb: 2"
+    #expect(YAMLDiff.hunks(original: yaml, edited: yaml).isEmpty)
+}
+
 @Test func kubernetesErrorClassificationByError() {
     let rbac = KubernetesOperationError(
         category: .rbac,

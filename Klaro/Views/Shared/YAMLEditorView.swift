@@ -3,8 +3,13 @@ import SwiftUI
 import CodeEditor
 
 struct YAMLEditorView: View {
+    @Environment(AppState.self) private var appState
+    @Environment(SettingsStore.self) private var settingsStore
+
     @Binding var source: String
     var title: String = "YAML Editor"
+    /// When set, Apply opens a git-style review of the pending changes first.
+    var originalSource: String?
     var onClose: (() -> Void)?
     var onApply: ((String) async throws -> String)?
 
@@ -15,6 +20,7 @@ struct YAMLEditorView: View {
     @State private var isApplying = false
     @State private var applyStatusMessage: String?
     @State private var applyStatusIsError = false
+    @State private var pendingDiffLines: [YAMLDiff.Line]?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -43,9 +49,7 @@ struct YAMLEditorView: View {
                 }
                 if let onApply {
                     Button {
-                        Task {
-                            await runApply(onApply)
-                        }
+                        requestApply(onApply)
                     } label: {
                         HStack(spacing: Theme.Dimensions.smallSpacing) {
                             Image(systemName: isApplying ? "hourglass" : "checkmark.circle")
@@ -135,6 +139,43 @@ struct YAMLEditorView: View {
                 refreshSearchMatches(resetIndex: false, updateSelection: false)
             }
         }
+        .sheet(isPresented: Binding(
+            get: { pendingDiffLines != nil },
+            set: { if !$0 { pendingDiffLines = nil } }
+        )) {
+            if let lines = pendingDiffLines, let onApply {
+                YAMLDiffReviewSheet(
+                    title: title,
+                    lines: lines,
+                    isProduction: settingsStore.isProduction(appState.activeCluster),
+                    clusterName: appState.activeCluster?.displayName ?? "",
+                    onConfirm: {
+                        pendingDiffLines = nil
+                        Task { await runApply(onApply) }
+                    },
+                    onCancel: {
+                        pendingDiffLines = nil
+                    }
+                )
+            }
+        }
+    }
+
+    /// Shows the change review when there is an original to diff against;
+    /// otherwise applies directly (e.g. fresh manifests with no baseline).
+    private func requestApply(_ onApply: @escaping (String) async throws -> String) {
+        guard let originalSource else {
+            Task { await runApply(onApply) }
+            return
+        }
+
+        let lines = YAMLDiff.hunks(original: originalSource, edited: source)
+        guard !lines.isEmpty else {
+            applyStatusIsError = false
+            applyStatusMessage = "No changes to apply."
+            return
+        }
+        pendingDiffLines = lines
     }
 
     private var editorSelectionBinding: Binding<Range<String.Index>> {

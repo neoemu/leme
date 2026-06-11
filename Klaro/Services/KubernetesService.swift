@@ -949,7 +949,7 @@ actor KubernetesService {
         }
 
         let sanitizedDocuments: [String] = try nodes.map { node in
-            let jsonObject = yamlNodeToJSONObject(node)
+            let jsonObject = Self.yamlNodeToJSONObject(node)
             let cleaned = pruneKubernetesNoiseForApply(in: jsonObject)
             let sanitized = sanitizeForYams(cleaned)
             return try Yams.dump(object: sanitized, allowUnicode: true, sortKeys: true)
@@ -1074,17 +1074,7 @@ actor KubernetesService {
     }
 
     private func parseYAMLDocuments(_ yamlString: String) throws -> [[String: Any]] {
-        let nodes = Array(try Yams.compose_all(yaml: yamlString))
-        guard !nodes.isEmpty else { return [] }
-
-        var documents: [[String: Any]] = []
-        for node in nodes {
-            let object = yamlNodeToJSONObject(node)
-            if let mapping = object as? [String: Any] {
-                documents.append(mapping)
-            }
-        }
-        return documents
+        try Self.yamlDocuments(from: yamlString)
     }
 
     private func manifestIdentity(from document: [String: Any]) -> ManifestIdentity? {
@@ -1179,10 +1169,30 @@ actor KubernetesService {
         }
     }
 
+    /// Parses a YAML string into JSON-compatible documents. Exposed (static)
+    /// so the scalar typing rules can be unit-tested.
+    static func yamlDocuments(from yamlString: String) throws -> [[String: Any]] {
+        let nodes = Array(try Yams.compose_all(yaml: yamlString))
+        var documents: [[String: Any]] = []
+        for node in nodes {
+            if let mapping = yamlNodeToJSONObject(node) as? [String: Any] {
+                documents.append(mapping)
+            }
+        }
+        return documents
+    }
+
     /// Recursively converts a Yams Node to a JSON-compatible object.
-    private func yamlNodeToJSONObject(_ node: Yams.Node) -> Any {
+    private static func yamlNodeToJSONObject(_ node: Yams.Node) -> Any {
         switch node {
         case .scalar(let scalar):
+            // Only plain scalars carry typed values; quoted and block scalars
+            // are strings by definition. Resolving by content alone turned
+            // "true" into a bool and "123456" into a number, silently changing
+            // value types in merge patches (ConfigMap/Secret string data).
+            guard scalar.style == .plain || scalar.style == .any else {
+                return scalar.string
+            }
             if let boolValue = Bool(scalar.string) {
                 return boolValue
             }

@@ -297,6 +297,7 @@ private struct ResizableYAMLEditorView: View {
             YAMLEditorView(
                 source: $appState.yamlSource,
                 title: appState.yamlEditorTitle,
+                originalSource: appState.yamlOriginalSource,
                 onClose: {
                     appState.closeYAMLEditor()
                 },

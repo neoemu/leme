@@ -16,6 +16,7 @@
 		10F99191F6DA0EAABC627CA5 /* KeyboardShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BAB52F8DE2AD85375F017D0 /* KeyboardShortcuts.swift */; };
 		1419638027608FFE9118B2CC /* ServiceAccountListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B739605E129B91103638A40 /* ServiceAccountListView.swift */; };
 		17769640F7DD92A045FC43CC /* PVCListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D7E37F4CDB2983CF8F88605 /* PVCListView.swift */; };
+		1BEABBEC0A0F8EFC6FABB627 /* YAMLDiffSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29FC9BC834D1EAD626FD7207 /* YAMLDiffSheet.swift */; };
 		1FE868880D9F1B05C915C3BF /* DangerConfirmationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD9C34C81C20B33355D03906 /* DangerConfirmationSheet.swift */; };
 		23344B37BFA862151ECFDAF2 /* EventListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 005602B260B288C64379A46F /* EventListView.swift */; };
 		23BBAB8C8DC66D29B27E516E /* RoleListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE80C5EA9ABDDC5FFFFAB3C6 /* RoleListView.swift */; };
@@ -142,6 +143,7 @@
 		25A3056F3D3022D8E5738BDB /* EndpointListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EndpointListView.swift; sourceTree = "<group>"; };
 		265964CFFF97490822C6A21A /* Color+Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Color+Theme.swift"; sourceTree = "<group>"; };
 		29C057233614C09882A99461 /* RoleBindingListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoleBindingListView.swift; sourceTree = "<group>"; };
+		29FC9BC834D1EAD626FD7207 /* YAMLDiffSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YAMLDiffSheet.swift; sourceTree = "<group>"; };
 		2A6DFBDDD4FCCA980F0BA6CE /* MainLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainLayout.swift; sourceTree = "<group>"; };
 		2BE56E3029F9BDF65D3D9FDC /* ServiceListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceListView.swift; sourceTree = "<group>"; };
 		32D8BD476CEA9F78782B6123 /* HelmReleaseDetailSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelmReleaseDetailSheet.swift; sourceTree = "<group>"; };
@@ -438,6 +440,7 @@
 				228D79C917922B011A93A7BD /* ResourceTableView.swift */,
 				B279D795393EEC25B531B69A /* StatusBadge.swift */,
 				9DB301550D20811A42DE8304 /* TerminalContainerView.swift */,
+				29FC9BC834D1EAD626FD7207 /* YAMLDiffSheet.swift */,
 				ED7C61DF1CBD0675E686E2B6 /* YAMLEditorView.swift */,
 			);
 			path = Shared;
@@ -756,6 +759,7 @@
 				77616AAAFCA50BC66FC3B163 /* Theme.swift in Sources */,
 				24B91869CF52E21E9E0D7713 /* UUID+Stable.swift in Sources */,
 				D7B16A1102DAC24335C4AAB7 /* UnifiedWorkloadsView.swift in Sources */,
+				1BEABBEC0A0F8EFC6FABB627 /* YAMLDiffSheet.swift in Sources */,
 				F1CB6CAECDBD4405BF8EA4C2 /* YAMLEditorView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
