@@ -2,6 +2,8 @@ import SwiftUI
 
 struct CommandPaletteView: View {
     @Environment(AppState.self) private var appState
+    @Environment(ClusterViewModel.self) private var clusterViewModel
+    @Environment(SettingsStore.self) private var settingsStore
     @State private var viewModel = CommandPaletteViewModel()
     @FocusState private var isSearchFieldFocused: Bool
 
@@ -27,7 +29,7 @@ struct CommandPaletteView: View {
             .frame(maxHeight: .infinity, alignment: .top)
         }
         .onAppear {
-            viewModel.buildActions(appState: appState)
+            viewModel.buildActions(appState: appState, clusterViewModel: clusterViewModel, settingsStore: settingsStore)
             isSearchFieldFocused = true
         }
         .onKeyPress(.escape) {

@@ -52,12 +52,39 @@ Lens is a powerful Kubernetes IDE, but it runs on Electron — consuming signifi
 ### YAML editor
 - View and edit resource YAML
 - Syntax highlighting via [CodeEditor](https://github.com/ZeeZide/CodeEditor)
-- Apply changes back to cluster
+- **Git-style diff review before every apply** — see exactly what changes hit the cluster
+- Merge-patch of only the changed fields, with `kubectl apply` fallback
+
+### Helm
+- Installed releases with status, chart, and revision
+- Revision history with one-click **rollback**
+- Values per revision (user-supplied or computed `--all`) and rendered manifest
+- Uninstall with confirmation
+- Compatible with helm 3 and 4
+
+### Troubleshooting ("Problems")
+- One view of everything broken right now: CrashLoopBackOff, ImagePull errors, unschedulable/OOM-killed pods, degraded workloads, NotReady nodes, pending PVCs, failed jobs
+- Correlated Warning events per problem, expandable inline
+- Live count badge in the sidebar (red = criticals)
+- Jump straight to the affected resource or its logs
+
+### Production guard-rails
+- Clusters auto-detected as PROD/STG/DEV/TEST by name (overridable per cluster)
+- Red PRODUCTION banner on prod clusters
+- Destructive operations (delete, restart, drain, rollback, uninstall, YAML apply) require **typing the resource/cluster name** to confirm — GitHub style
+
+### SRE workflows
+- Port-forward manager with suggested ports and active-forward badge
+- Node cordon/uncordon/drain
+- Workload rollout restart and rollback
+- Secret decode with reveal/copy
+- Multi-pod (stern-style) workload logs
+- Namespace management (create/delete, use-as-filter)
 
 ### Command palette
 - `Cmd+Shift+P` to open
-- Fuzzy search across actions, resource types, and navigation
-- Keyboard-driven workflow
+- Fuzzy search across navigation, cluster operations, and contextual actions on the selected resource
+- Keyboard-driven workflow with production confirmations preserved
 
 ## Screenshots
 
@@ -74,20 +101,22 @@ Views (SwiftUI)  →  ViewModels (@Observable)  →  Services (actors)  →  Swi
                    passed via @Environment
 ```
 
-### Layout (3-column, inspired by Lens)
+### Layout (flat chrome, hidden title bar)
 
 ```
-┌────────┬─────────────┬────────────────────────────────────────┐
-│ Hotbar │  Sidebar     │  Content Area                          │
-│  48px  │  220px       │                                        │
-│        │              │  ResourceTable  │  DetailPanel (slide)  │
-│ [Home] │ [Cluster]    │                 │                       │
-│ [Ctx1] │   Overview   │                 │                       │
-│ [Ctx2] │ [Workloads]  ├─────────────────┴───────────────────────┤
-│ [Ctx3] │   Pods       │  Bottom Panel (Logs / Terminal / YAML)  │
-│  ...   │   Deploy     │                                         │
-│ [Gear] │   ...        └─────────────────────────────────────────┘
-└────────┴─────────────┘
+┌──────────────────┬──────────────────────────────────────────────┐
+│ Cluster switcher │  Top strip (sidebar toggle · reload · port-  │
+│ Namespace filter │  forwards · inspector · settings)            │
+│                  ├──────────────────────────────────────────────┤
+│ Cluster          │                                              │
+│   Problems  (3)  │  ResourceTable        │ Inspector (slide-in) │
+│   Nodes          │                       │  or YAML editor      │
+│ Workloads        │                       │                      │
+│   Pods           ├───────────────────────┴──────────────────────┤
+│   Deployments    │  Bottom Panel (Logs / Terminal)              │
+│ Apps · Helm      │                                              │
+│ More Resources   │                                              │
+└──────────────────┴──────────────────────────────────────────────┘
 ```
 
 ### Tech stack
@@ -152,7 +181,7 @@ Klaro/
     └── Assets.xcassets
 ```
 
-**59 Swift source files — ~7,300 lines of code.**
+**~90 Swift source files — ~20,000 lines of code.**
 
 ## Requirements
 
@@ -207,42 +236,39 @@ Klaro automatically adds `/opt/homebrew/bin`, `/usr/local/bin`, and other common
 
 | Shortcut | Action |
 |---|---|
-| `Cmd+Shift+P` | Command palette |
-| `Cmd+K` | Quick search |
-| `Cmd+L` | View logs for selected pod |
-| `Cmd+1` | Show sidebar |
-| `Cmd+2` | Show bottom panel |
-| `Cmd+Shift+T` | New terminal tab |
+| `Cmd+Shift+P` | Command palette — navigation, cluster ops, and actions on the **selected resource** (logs/shell/delete for pods, restart/rollback for workloads, cordon/uncordon/drain for nodes) |
+| `Cmd+K` | Global search across all namespaces (resources + helm releases) |
+| `Cmd+Shift+L` | Open the logs panel |
+| `Cmd+Shift+T` | Open the local terminal |
+| `Cmd+Shift+D` | Toggle the detail inspector |
+| `Cmd+Shift+J` | Close the bottom panel |
+| `Cmd+S` | Apply (inside the YAML editor, after the diff review) |
+
+Tips: single-click selects a row (that's what palette actions operate on); double-click opens the detail inspector. Destructive palette actions on production clusters still require the type-to-confirm step.
 
 ## Current status
 
 ### Working
-- [x] Kubeconfig auto-detection and parsing
-- [x] Multi-cluster connection management
-- [x] Exec-based auth (kubelogin, gcloud, aws-iam-authenticator)
-- [x] 3-column layout (Hotbar + Sidebar + Content)
-- [x] Resource browsing for all 26 resource types
-- [x] Sortable, searchable resource tables
-- [x] Namespace filtering
-- [x] Resource detail panel (metadata, labels, spec, status)
-- [x] Pod log streaming with follow mode
-- [x] Integrated terminal (local shell)
-- [x] YAML editor with syntax highlighting
-- [x] Command palette with fuzzy search
-- [x] Dark mode support
-- [x] Cluster overview dashboard
+- [x] Kubeconfig auto-detection, parsing, and file watcher (auto-reload on change)
+- [x] Multi-cluster connection management with exec-based auth (kubelogin, gcloud, aws-iam-authenticator)
+- [x] Real-time resource updates via the K8s watch API (incremental, no polling)
+- [x] Resource browsing for all built-in types + CRDs (grouped by API group)
+- [x] Pod log streaming (single pod and stern-style multi-pod), pod exec shell
+- [x] YAML edit with diff review and merge-patch apply
+- [x] Helm release management (history, rollback, values, manifest, uninstall)
+- [x] Problems view with sidebar badge
+- [x] Port-forward manager, cordon/drain, rollout restart/rollback
+- [x] Production guard-rails (type-to-confirm on destructive ops)
+- [x] Global search (Cmd+K) and operational command palette (Cmd+Shift+P)
+- [x] Node metrics charts (CPU/memory via metrics-server)
+- [x] Namespace management
 
 ### Planned
-- [ ] Resource watching (real-time updates via K8s watch API)
-- [ ] Pod exec terminal (shell into pods)
-- [ ] YAML apply (edit and save back to cluster)
-- [ ] Resource delete with confirmation
-- [ ] Metrics integration (CPU/memory charts via metrics-server)
-- [ ] Helm release management
-- [ ] CRD support (custom resource definitions)
+- [ ] CI + release pipeline (GitHub Actions, DMG)
+- [ ] App icon and screenshots
+- [ ] Code signing + notarization, Homebrew cask, Sparkle auto-update
 - [ ] Multi-window support
-- [ ] Kubeconfig file watcher (auto-reload on change)
-- [ ] Spotlight integration (search clusters from macOS Spotlight)
+- [ ] Light theme refinements
 
 ## License
 

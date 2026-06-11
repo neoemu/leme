@@ -39,7 +39,9 @@ struct MainLayout: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
+        @Bindable var appState = appState
+
+        return HStack(spacing: 0) {
             if isSidebarVisible {
                 SidebarView()
                     .frame(width: sidebarLiveWidth)
@@ -69,6 +71,33 @@ struct MainLayout: View {
         .animation(.easeInOut(duration: 0.15), value: appState.isCommandPaletteOpen)
         .animation(.easeInOut(duration: 0.15), value: appState.isGlobalSearchOpen)
         .animation(.easeInOut(duration: 0.15), value: isSidebarVisible)
+        .sheet(item: $appState.pendingDangerAction) { action in
+            DangerConfirmationSheet(
+                action: action,
+                clusterName: appState.activeCluster?.displayName ?? ""
+            ) {
+                appState.pendingDangerAction = nil
+            }
+        }
+        .overlay(alignment: .bottom) {
+            toastOverlay
+        }
+        .animation(.easeInOut(duration: 0.2), value: appState.toastMessage)
+    }
+
+    @ViewBuilder
+    private var toastOverlay: some View {
+        if let message = appState.toastMessage {
+            Text(message)
+                .font(Theme.Fonts.caption)
+                .lineLimit(2)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(Capsule().fill(.ultraThickMaterial))
+                .overlay(Capsule().stroke(Color.primary.opacity(0.12), lineWidth: 1))
+                .padding(.bottom, 24)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
     }
 
     private var detailColumn: some View {

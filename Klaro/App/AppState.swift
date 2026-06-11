@@ -78,6 +78,12 @@ final class AppState: @unchecked Sendable {
     var bottomPanelHeight: CGFloat = 250
     var isCommandPaletteOpen: Bool = false
     var isGlobalSearchOpen: Bool = false
+    /// Production type-to-confirm requested by flows whose own UI is already
+    /// gone when the confirmation shows (e.g. command palette actions).
+    var pendingDangerAction: PendingDangerAction?
+    /// Transient feedback for actions without a host view (command palette).
+    private(set) var toastMessage: String?
+    @ObservationIgnored private var toastDismissTask: Task<Void, Never>?
     var searchText: String = ""
     var logTargetPodName: String?
     var logTargetNamespace: String?
@@ -157,6 +163,16 @@ final class AppState: @unchecked Sendable {
 
     func selectResource(_ id: String?) {
         selectedResourceID = id
+    }
+
+    func showToast(_ message: String) {
+        toastMessage = message
+        toastDismissTask?.cancel()
+        toastDismissTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard !Task.isCancelled else { return }
+            self?.toastMessage = nil
+        }
     }
 
     func showResourceDetail(_ id: String) {
