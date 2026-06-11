@@ -136,9 +136,9 @@ struct ResourceDetailPanel: View {
             .contentShape(Rectangle())
             .background(
                 RoundedRectangle(cornerRadius: Theme.Dimensions.cornerRadius)
-                    .fill(selectedTab == tab ? Theme.Colors.accent.opacity(0.15) : .clear)
+                    .fill(selectedTab == tab ? Color.primary.opacity(0.09) : .clear)
             )
-            .foregroundStyle(selectedTab == tab ? Theme.Colors.accent : .secondary)
+            .foregroundStyle(selectedTab == tab ? .primary : .secondary)
         }
         .buttonStyle(.plain)
         .padding(.leading, Theme.Dimensions.smallSpacing)
@@ -345,7 +345,7 @@ struct ResourceDetailPanel: View {
                     .padding(Theme.Dimensions.smallSpacing)
                     .background(
                         RoundedRectangle(cornerRadius: Theme.Dimensions.cornerRadius)
-                            .fill(Theme.Colors.cardBackground)
+                            .fill(Color.primary.opacity(0.05))
                     )
             } else {
                 Text(String(repeating: "•", count: min(max(decodedValue?.count ?? 8, 4), 24)))
@@ -376,11 +376,11 @@ struct ResourceDetailPanel: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: Theme.Dimensions.cardCornerRadius)
-                    .fill(Theme.Colors.cardBackground)
+                    .fill(Color.primary.opacity(0.04))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Dimensions.cardCornerRadius)
-                    .stroke(Theme.Colors.cardBorder, lineWidth: 0.5)
+                    .stroke(Color.primary.opacity(0.07), lineWidth: 1)
             )
         }
     }
@@ -401,7 +401,7 @@ struct ResourceDetailPanel: View {
         HStack(spacing: 0) {
             Text(key)
                 .font(Theme.Fonts.monoSmall)
-                .foregroundStyle(Theme.Colors.accent)
+                .foregroundStyle(Theme.Colors.secondaryText)
             Text("=")
                 .font(Theme.Fonts.monoSmall)
                 .foregroundStyle(Theme.Colors.tertiaryText)
@@ -492,13 +492,13 @@ struct ResourceDetailPanel: View {
                         .frame(width: 30, height: 30)
                         .background(
                             RoundedRectangle(cornerRadius: 7)
-                                .fill(nodeMetricsMode == mode ? Theme.Colors.accent.opacity(0.18) : Theme.Colors.cardBackground)
+                                .fill(nodeMetricsMode == mode ? Color.primary.opacity(0.10) : Color.primary.opacity(0.03))
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 7)
-                                .stroke(nodeMetricsMode == mode ? Theme.Colors.accent.opacity(0.55) : Theme.Colors.cardBorder, lineWidth: 0.7)
+                                .stroke(Color.primary.opacity(nodeMetricsMode == mode ? 0.16 : 0.07), lineWidth: 1)
                         )
-                        .foregroundStyle(nodeMetricsMode == mode ? Theme.Colors.accent : Theme.Colors.secondaryText)
+                        .foregroundStyle(nodeMetricsMode == mode ? .primary : Theme.Colors.secondaryText)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)

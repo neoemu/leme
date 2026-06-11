@@ -320,10 +320,9 @@ private struct ResizableYAMLEditorView: View {
                 }
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(.regularMaterial)
+            .background(Theme.Colors.contentBackground)
         }
         .frame(width: width)
-        .glassEffect(.regular, in: Rectangle())
         .onAppear {
             width = clamp(initialWidth)
         }
@@ -339,7 +338,7 @@ private struct ResizableYAMLEditorView: View {
         ZStack(alignment: .trailing) {
             Color.clear
             Rectangle()
-                .fill(Theme.Colors.separator.opacity(0.45))
+                .fill(Color.white.opacity(0.07))
                 .frame(width: 1)
         }
         .frame(width: 8)
@@ -351,7 +350,7 @@ private struct ResizableYAMLEditorView: View {
             isHoveringResizeHandle = hovering
         }
         .highPriorityGesture(
-            DragGesture(minimumDistance: 1)
+            DragGesture(minimumDistance: 1, coordinateSpace: .global)
                 .onChanged { value in
                     if dragStartWidth == nil {
                         dragStartWidth = width
@@ -414,10 +413,9 @@ private struct ResizableInspectorDetailView: View {
             resizeHandle
             InspectorDetailView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .background(.regularMaterial)
+                .background(Theme.Colors.contentBackground)
         }
         .frame(width: width)
-        .glassEffect(.regular, in: Rectangle())
         .onAppear {
             width = clamp(initialWidth)
         }
@@ -433,7 +431,7 @@ private struct ResizableInspectorDetailView: View {
         ZStack(alignment: .trailing) {
             Color.clear
             Rectangle()
-                .fill(Theme.Colors.separator.opacity(0.45))
+                .fill(Color.white.opacity(0.07))
                 .frame(width: 1)
         }
         .frame(width: 8)
@@ -445,7 +443,7 @@ private struct ResizableInspectorDetailView: View {
             isHoveringResizeHandle = hovering
         }
         .highPriorityGesture(
-            DragGesture(minimumDistance: 1)
+            DragGesture(minimumDistance: 1, coordinateSpace: .global)
                 .onChanged { value in
                     if dragStartWidth == nil {
                         dragStartWidth = width
