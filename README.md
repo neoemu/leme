@@ -92,7 +92,33 @@ Lens is a powerful Kubernetes IDE, but it runs on Electron — consuming signifi
 
 ## Screenshots
 
-*Coming soon — the app is functional and connecting to real clusters.*
+**Pods across the cluster — live watch, CPU/memory per pod, container readiness:**
+
+![Pods](docs/screenshots/pods.png)
+
+**Nodes with live CPU / RAM / pod-count gauges:**
+
+![Nodes](docs/screenshots/nodes.png)
+
+| Node metrics (metrics-server + kubelet summary) | Network throughput charts |
+|---|---|
+| ![Node metrics](docs/screenshots/node-metrics.png) | ![Node network](docs/screenshots/node-network.png) |
+
+**Helm releases — revision history with per-revision values and one-click rollback:**
+
+![Helm](docs/screenshots/helm.png)
+
+| Resource YAML (clean / raw modes) | Diff review before every apply |
+|---|---|
+| ![YAML detail](docs/screenshots/yaml-detail.png) | ![Diff review](docs/screenshots/diff-review.png) |
+
+| Shell into pods | Live log streaming |
+|---|---|
+| ![Terminal](docs/screenshots/terminal.png) | ![Logs](docs/screenshots/logs.png) |
+
+| Row actions everywhere | Port-forward with suggested ports |
+|---|---|
+| ![Context menu](docs/screenshots/context-menu.png) | ![Port forward](docs/screenshots/port-forward.png) |
 
 ## Architecture
 
