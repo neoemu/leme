@@ -6,11 +6,18 @@ struct InspectorDetailView: View {
     @Environment(AppState.self) private var appState
     @Environment(ClusterViewModel.self) private var clusterViewModel
     @State private var detailViewModel: ResourceDetailViewModel?
+    @State private var loadFailure: String?
 
     var body: some View {
         Group {
             if let detailVM = detailViewModel {
                 ResourceDetailPanel(viewModel: detailVM)
+            } else if let loadFailure {
+                ContentUnavailableView(
+                    "Couldn't Load Details",
+                    systemImage: "exclamationmark.triangle",
+                    description: Text(loadFailure)
+                )
             } else if appState.selectedResourceID != nil {
                 ProgressView("Loading...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -23,6 +30,7 @@ struct InspectorDetailView: View {
             }
         }
         .task(id: appState.selectedResourceID) {
+            loadFailure = nil
             if let resourceID = appState.selectedResourceID {
                 await loadDetail(resourceID: resourceID)
             } else {
@@ -54,7 +62,10 @@ struct InspectorDetailView: View {
             }
 
             do {
-                guard let client = try await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+                guard let client = try await clusterViewModel.clientForActiveCluster(appState: appState) else {
+                    loadFailure = "No active cluster connection."
+                    return
+                }
                 let detail = ResourceDetailViewModel(client: client, contextName: appState.activeCluster?.contextName)
                 detailViewModel = detail
                 await detail.loadCustomResourceDetail(
@@ -64,7 +75,7 @@ struct InspectorDetailView: View {
                     context: appState.activeCluster?.contextName
                 )
             } catch {
-                // Best effort; detail panel shows error from view model when available.
+                loadFailure = error.localizedDescription
             }
             return
         }
@@ -74,7 +85,10 @@ struct InspectorDetailView: View {
         let name: String
 
         if appState.selectedResourceKind.isNamespaced {
-            guard parts.count == 2 else { return }
+            guard parts.count == 2 else {
+                loadFailure = "Unexpected resource identifier '\(resourceID)'."
+                return
+            }
             namespace = String(parts[0])
             name = String(parts[1])
         } else {
@@ -83,7 +97,10 @@ struct InspectorDetailView: View {
         }
 
         do {
-            guard let client = try await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
+            guard let client = try await clusterViewModel.clientForActiveCluster(appState: appState) else {
+                loadFailure = "No active cluster connection."
+                return
+            }
             let detail = ResourceDetailViewModel(client: client, contextName: appState.activeCluster?.contextName)
             detailViewModel = detail
 
@@ -142,7 +159,7 @@ struct InspectorDetailView: View {
 
             // Events
             case .event:
-                await detail.loadDetail(core.v1.Event.self, name: name, namespace: namespace ?? "default")
+                await detail.loadEventDetail(name: name, namespace: namespace ?? "default")
 
             // Cluster-scoped resources
             case .node:

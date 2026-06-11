@@ -460,9 +460,12 @@ struct ResourceTableView: View {
 
     private func flatContent(contentWidth: CGFloat?) -> some View {
         LazyVStack(spacing: 0) {
+            // Rows are identified by ResourceItem.id only: value changes
+            // (status, extras) re-render in place. Mixing content into the
+            // identity recreated rows on every live-watch upsert, which made
+            // fast-churning lists (events) flicker and drop rows.
             ForEach(viewModel.filteredResources) { resource in
                 resourceRow(resource)
-                    .id(rowIdentity(resource))
                     .frame(width: contentWidth)
                 Divider()
                     .padding(.leading, Theme.Dimensions.padding)
@@ -494,7 +497,6 @@ struct ResourceTableView: View {
                 // Resources in this namespace
                 ForEach(grouped[namespace] ?? []) { resource in
                     resourceRow(resource)
-                        .id(rowIdentity(resource))
                         .frame(width: contentWidth)
                     Divider()
                         .padding(.leading, Theme.Dimensions.padding)
@@ -726,20 +728,6 @@ struct ResourceTableView: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
-    }
-
-    private func rowIdentity(_ resource: ResourceItem) -> String {
-        let extrasSignature = resource.extraColumns
-            .sorted { $0.key < $1.key }
-            .map { "\($0.key)=\($0.value)" }
-            .joined(separator: "|")
-
-        return [
-            resource.id,
-            resource.status,
-            resource.namespace ?? "",
-            extrasSignature,
-        ].joined(separator: "||")
     }
 
     // MARK: - Context Menu

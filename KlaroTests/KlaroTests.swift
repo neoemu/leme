@@ -256,6 +256,22 @@ import Testing
     #expect(map["Pod/prod/api-1"]?.count == 1)
     #expect(map["Pod/prod/api-1"]?.first?.reason == "BackOff")
     #expect(map["Pod/prod/api-1"]?.first?.count == 12)
+    #expect(map["Pod/prod/api-1"]?.first?.id == "evt-1")
+}
+
+@Test func eventObjectMetaAccessor() {
+    // core.v1.Event.metadata is non-optional and cannot witness the protocol's
+    // optional requirement, so `event.metadata?.name` silently resolves to the
+    // extension default (nil). The objectMeta accessor must reach the stored value.
+    let event = core.v1.Event(
+        metadata: meta.v1.ObjectMeta(name: "evt-1", namespace: "prod"),
+        involvedObject: core.v1.ObjectReference(kind: "Pod", name: "api-1", namespace: "prod")
+    )
+
+    #expect(event.objectMeta.name == "evt-1")
+    #expect(event.objectMeta.namespace == "prod")
+    // The trap this guards against: optional chaining hits the nil default.
+    #expect(event.metadata?.name == nil)
 }
 
 @Test func kubernetesErrorClassificationByError() {

@@ -99,6 +99,7 @@
 		F1CB6CAECDBD4405BF8EA4C2 /* YAMLEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED7C61DF1CBD0675E686E2B6 /* YAMLEditorView.swift */; };
 		F3FC86D253079BDEB419E255 /* DeploymentDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5243F82F3C8E61894DA2CCAF /* DeploymentDetailView.swift */; };
 		F5CD5EEAC411AA45094F68CA /* SwiftkubeModel in Frameworks */ = {isa = PBXBuildFile; productRef = FFBFEE2DEA17B06381EF868B /* SwiftkubeModel */; };
+		F61AAB0C0813A3C14EE11CF3 /* Event+ObjectMeta.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F6E90D67B07E80288D66A6A /* Event+ObjectMeta.swift */; };
 		F6A21E6B219125BE5FD1AD8E /* MainLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A6DFBDDD4FCCA980F0BA6CE /* MainLayout.swift */; };
 		F6C5B408F88D1E51645C0A23 /* KlaroApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F32551EBE4ACD09B5FAD8C3B /* KlaroApp.swift */; };
 		F6DE3D671760FEB6AE64514B /* EndpointListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25A3056F3D3022D8E5738BDB /* EndpointListView.swift */; };
@@ -173,6 +174,7 @@
 		7B4B3F248BE29417423CACC3 /* ResourceCategory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResourceCategory.swift; sourceTree = "<group>"; };
 		7C93A2EF69638DF57E2F27EB /* PodLogsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PodLogsViewModel.swift; sourceTree = "<group>"; };
 		7D10616A01CFE17BC8B6EA25 /* ClusterViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClusterViewModel.swift; sourceTree = "<group>"; };
+		7F6E90D67B07E80288D66A6A /* Event+ObjectMeta.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Event+ObjectMeta.swift"; sourceTree = "<group>"; };
 		7FC739DF4B63586DF7A0148E /* ClusterDashboardViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClusterDashboardViewModel.swift; sourceTree = "<group>"; };
 		8322175D44ADFA729D2AE76E /* Klaro.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Klaro.entitlements; sourceTree = "<group>"; };
 		8354B23CBE82F439FFEB5F34 /* ResourceDetailViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResourceDetailViewModel.swift; sourceTree = "<group>"; };
@@ -500,6 +502,7 @@
 			children = (
 				265964CFFF97490822C6A21A /* Color+Theme.swift */,
 				1EF0B0DB14F2B0E8BD5E8FA3 /* Date+RelativeTime.swift */,
+				7F6E90D67B07E80288D66A6A /* Event+ObjectMeta.swift */,
 				B2A9E6185CB222B146867F5A /* Quantity+Parsing.swift */,
 				4FA047A319183FC7FD8758D5 /* UUID+Stable.swift */,
 			);
@@ -694,6 +697,7 @@
 				2AB65B95A554DEEE673B408D /* DeploymentListView.swift in Sources */,
 				6D8653DEE54F6E6FE28FB174 /* EmptyStateView.swift in Sources */,
 				F6DE3D671760FEB6AE64514B /* EndpointListView.swift in Sources */,
+				F61AAB0C0813A3C14EE11CF3 /* Event+ObjectMeta.swift in Sources */,
 				23344B37BFA862151ECFDAF2 /* EventListView.swift in Sources */,
 				2988F6C4D0A7812F9D2DC117 /* ExecService.swift in Sources */,
 				09D838A67105C163A00E1E4C /* GlobalSearchView.swift in Sources */,

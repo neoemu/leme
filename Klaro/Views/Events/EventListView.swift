@@ -55,6 +55,8 @@ struct EventListView: View {
             }
         )
         .task {
+            // Events are a time-ordered feed: newest first by default.
+            viewModel.sortField = .age
             await loadData()
             startAutoRefresh()
         }
@@ -79,15 +81,17 @@ struct EventListView: View {
             client: client,
             namespace: appState.selectedNamespace
         ) { event in
-            let lastSeen = event.lastTimestamp ?? event.metadata?.creationTimestamp
+            // See core.v1.Event.objectMeta: `event.metadata?.x` is always nil.
+            let objectMeta = event.objectMeta
+            let lastSeen = event.lastTimestamp ?? objectMeta.creationTimestamp
             return ResourceItem(
-                id: "\(event.metadata?.namespace ?? "")/\(event.name ?? "")",
-                name: event.name ?? "",
-                namespace: event.metadata?.namespace,
+                id: "\(objectMeta.namespace ?? "")/\(objectMeta.name ?? "")",
+                name: objectMeta.name ?? "",
+                namespace: objectMeta.namespace,
                 status: event.type ?? "Normal",
                 age: lastSeen,
-                labels: event.metadata?.labels ?? [:],
-                annotations: event.metadata?.annotations ?? [:],
+                labels: objectMeta.labels ?? [:],
+                annotations: objectMeta.annotations ?? [:],
                 kind: .event,
                 extraColumns: [
                     "reason": event.reason ?? "",

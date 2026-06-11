@@ -296,11 +296,12 @@ final class ProblemsViewModel {
             guard let kind = event.involvedObject.kind, let name = event.involvedObject.name else { continue }
             let key = "\(kind)/\(event.involvedObject.namespace ?? "")/\(name)"
             map[key, default: []].append(ProblemEvent(
-                id: event.metadata?.name ?? "\(key)-\(event.reason ?? "")",
+                // See core.v1.Event.objectMeta: `event.metadata?.x` is always nil.
+                id: event.objectMeta.name ?? "\(key)-\(event.reason ?? "")",
                 reason: event.reason ?? "Warning",
                 message: event.message ?? "",
                 count: Int(event.count ?? 1),
-                lastSeen: event.lastTimestamp ?? event.metadata?.creationTimestamp
+                lastSeen: event.lastTimestamp ?? event.objectMeta.creationTimestamp
             ))
         }
 

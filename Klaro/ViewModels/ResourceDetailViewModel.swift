@@ -318,6 +318,54 @@ final class ResourceDetailViewModel {
         isLoading = false
     }
 
+    /// Events need their own detail loader: the generic path reads metadata
+    /// through the protocol requirement, which `core.v1.Event` cannot witness
+    /// (its stored `metadata` is non-optional), so it comes back empty.
+    func loadEventDetail(name: String, namespace: String) async {
+        isLoading = true
+        errorMessage = nil
+        stopNodeMetricsRefresh()
+        nodeOverview = nil
+        nodeMetricsHistory = []
+        events = []
+
+        do {
+            let event = try await kubernetesService.get(core.v1.Event.self, name: name, in: namespace)
+            let objectMeta = event.objectMeta
+
+            metadata = [:]
+            metadata["name"] = objectMeta.name
+            metadata["namespace"] = objectMeta.namespace ?? ""
+            metadata["uid"] = objectMeta.uid ?? ""
+            metadata["type"] = event.type ?? "Normal"
+            metadata["reason"] = event.reason ?? ""
+            metadata["message"] = event.message ?? ""
+            metadata["count"] = "\(event.count ?? 1)"
+            metadata["involvedObject"] = "\(event.involvedObject.kind ?? "")/\(event.involvedObject.name ?? "")"
+            if let component = event.source?.component {
+                metadata["source"] = component
+            }
+            if let first = event.firstTimestamp {
+                metadata["firstTimestamp"] = first.description
+            }
+            if let last = event.lastTimestamp {
+                metadata["lastTimestamp"] = last.description
+            }
+            labels = objectMeta.labels ?? [:]
+            annotations = objectMeta.annotations ?? [:]
+
+            do {
+                resourceYAML = try await kubernetesService.getYAML(event)
+            } catch {
+                resourceYAML = "# Error loading YAML: \(error.localizedDescription)"
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+
+        isLoading = false
+    }
+
     // MARK: - Apply YAML
 
     func applyYAML(_ yaml: String, namespace: String?) async {
@@ -338,12 +386,13 @@ final class ResourceDetailViewModel {
                     event.involvedObject.name == name
                 }
                 .map { event in
+                    // See core.v1.Event.objectMeta: `event.metadata?.x` is always nil.
                     ResourceItem(
-                        id: "\(event.metadata?.namespace ?? "")/\(event.name ?? "")",
-                        name: event.name ?? "",
-                        namespace: event.metadata?.namespace,
+                        id: "\(event.objectMeta.namespace ?? "")/\(event.objectMeta.name ?? "")",
+                        name: event.objectMeta.name ?? "",
+                        namespace: event.objectMeta.namespace,
                         status: event.type ?? "Normal",
-                        age: event.metadata?.creationTimestamp,
+                        age: event.lastTimestamp ?? event.objectMeta.creationTimestamp,
                         labels: [:],
                         annotations: [:],
                         kind: .event,
@@ -370,11 +419,11 @@ final class ResourceDetailViewModel {
                 }
                 .map { event in
                     ResourceItem(
-                        id: "\(event.metadata?.namespace ?? "")/\(event.name ?? "")",
-                        name: event.name ?? "",
-                        namespace: event.metadata?.namespace,
+                        id: "\(event.objectMeta.namespace ?? "")/\(event.objectMeta.name ?? "")",
+                        name: event.objectMeta.name ?? "",
+                        namespace: event.objectMeta.namespace,
                         status: event.type ?? "Normal",
-                        age: event.lastTimestamp ?? event.metadata?.creationTimestamp,
+                        age: event.lastTimestamp ?? event.objectMeta.creationTimestamp,
                         labels: [:],
                         annotations: [:],
                         kind: .event,
