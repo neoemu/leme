@@ -157,8 +157,8 @@ struct HelmService: Sendable {
 
         let fileManager = FileManager.default
         let tempDirectory = fileManager.temporaryDirectory
-        let stdoutURL = tempDirectory.appendingPathComponent("klaro-helm-stdout-\(UUID().uuidString).tmp")
-        let stderrURL = tempDirectory.appendingPathComponent("klaro-helm-stderr-\(UUID().uuidString).tmp")
+        let stdoutURL = tempDirectory.appendingPathComponent("leme-helm-stdout-\(UUID().uuidString).tmp")
+        let stderrURL = tempDirectory.appendingPathComponent("leme-helm-stderr-\(UUID().uuidString).tmp")
 
         guard fileManager.createFile(atPath: stdoutURL.path, contents: nil),
               fileManager.createFile(atPath: stderrURL.path, contents: nil),

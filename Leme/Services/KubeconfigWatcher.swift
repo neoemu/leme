@@ -7,7 +7,7 @@ final class KubeconfigWatcher: @unchecked Sendable {
 
     private let path: String
     private let onChange: @Sendable () -> Void
-    private let queue = DispatchQueue(label: "com.klaro.kubeconfig-watcher")
+    private let queue = DispatchQueue(label: "com.leme.kubeconfig-watcher")
 
     private var source: DispatchSourceFileSystemObject?
     private var debounceWorkItem: DispatchWorkItem?

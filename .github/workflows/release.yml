@@ -1,0 +1,83 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select latest Xcode 26
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)/Contents/Developer"
+
+      - name: Ensure Metal toolchain (SwiftTerm shaders)
+        run: xcodebuild -downloadComponent MetalToolchain || true
+
+      - name: Cache SwiftPM packages
+        uses: actions/cache@v4
+        with:
+          path: build/DerivedData/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('Leme.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      - name: Resolve version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Unit tests
+        run: |
+          set -o pipefail
+          xcodebuild -project Leme.xcodeproj -scheme Leme -configuration Debug \
+            -destination 'platform=macOS' -derivedDataPath build/DerivedData \
+            test -only-testing:LemeTests | tail -60
+
+      - name: Build Release
+        run: |
+          set -o pipefail
+          xcodebuild -project Leme.xcodeproj -scheme Leme -configuration Release \
+            -destination 'platform=macOS' -derivedDataPath build/DerivedData \
+            MARKETING_VERSION="${{ steps.version.outputs.version }}" \
+            CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+            build | tail -60
+
+      # Ad-hoc signature: required to run on Apple Silicon. Replaced by
+      # Developer ID + notarization once the Apple Developer account exists.
+      - name: Ad-hoc sign
+        run: |
+          codesign --force --deep --sign - build/DerivedData/Build/Products/Release/Leme.app
+          codesign --verify --deep --strict build/DerivedData/Build/Products/Release/Leme.app
+
+      - name: Create DMG
+        run: |
+          STAGING=build/dmg
+          mkdir -p "$STAGING"
+          cp -R build/DerivedData/Build/Products/Release/Leme.app "$STAGING/"
+          ln -s /Applications "$STAGING/Applications"
+          hdiutil create -volname "Leme" -srcfolder "$STAGING" -ov -format UDZO \
+            "build/Leme-${{ steps.version.outputs.version }}.dmg"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/Leme-*.dmg
+          generate_release_notes: true
+          body: |
+            ## Installation
+
+            1. Download the DMG below, open it and drag **Leme** to Applications.
+            2. Leme is not notarized yet (no Apple Developer account). On first
+               launch macOS will block it: open **System Settings → Privacy &
+               Security**, scroll down and click **Open Anyway**.
+
+            Alternatively, clear the quarantine flag from the terminal:
+
+            ```bash
+            xattr -d com.apple.quarantine /Applications/Leme.app
+            ```

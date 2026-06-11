@@ -1,7 +1,7 @@
 import Foundation
 import SwiftkubeModel
 import Testing
-@testable import Klaro
+@testable import Leme
 
 @Test func appStateDefaults() {
     let state = AppState()

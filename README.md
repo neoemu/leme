@@ -1,12 +1,16 @@
-# Klaro
+# Leme
+
+[![CI](https://github.com/neoemu/leme/actions/workflows/ci.yml/badge.svg)](https://github.com/neoemu/leme/actions/workflows/ci.yml)
 
 A native macOS Kubernetes IDE built with SwiftUI. A lightweight, fast alternative to [Lens](https://k8slens.dev/) — no Electron, no web stack, pure Apple-native experience.
 
-## Why Klaro?
+> **Why "Leme"?** The Kubernetes logo is a ship's wheel — the helm. In Portuguese, that's the **leme**. *Estar ao leme* means to be at the helm, in command. Leme puts your hands on it.
 
-Lens is a powerful Kubernetes IDE, but it runs on Electron — consuming significant memory and CPU. Klaro delivers the same core experience as a native macOS app:
+## Why Leme?
 
-| | Lens | Klaro |
+Lens is a powerful Kubernetes IDE, but it runs on Electron — consuming significant memory and CPU. Leme delivers the same core experience as a native macOS app:
+
+| | Lens | Leme |
 |---|---|---|
 | Runtime | Electron (Chromium) | Native macOS (SwiftUI) |
 | Memory | ~500MB+ | ~50MB |
@@ -139,9 +143,9 @@ Views (SwiftUI)  →  ViewModels (@Observable)  →  Services (actors)  →  Swi
 ## Project structure
 
 ```
-Klaro/
+Leme/
 ├── App/
-│   ├── KlaroApp.swift                 # @main entry point
+│   ├── LemeApp.swift                 # @main entry point
 │   ├── AppState.swift                 # Global observable state
 │   ├── AppCommands.swift              # Menu bar commands + shortcuts
 │   └── Theme.swift                    # Colors, fonts, dark/light tokens
@@ -192,15 +196,25 @@ Klaro/
 
 ## Getting started
 
+### Install (download)
+
+Grab the latest DMG from [Releases](https://github.com/neoemu/leme/releases), open it and drag **Leme** to Applications.
+
+Leme is not notarized yet, so macOS blocks the first launch. Either go to **System Settings → Privacy & Security** and click **Open Anyway**, or clear the quarantine flag:
+
+```bash
+xattr -d com.apple.quarantine /Applications/Leme.app
+```
+
 ### Build and run
 
 ```bash
 # Clone
-git clone git@github.com:neoemu/klaro.git
-cd klaro
+git clone git@github.com:neoemu/leme.git
+cd leme
 
 # Open in Xcode
-open Klaro.xcodeproj
+open Leme.xcodeproj
 
 # Build: Cmd+B
 # Run:   Cmd+R
@@ -230,7 +244,7 @@ brew install --cask google-cloud-sdk
 brew install aws-iam-authenticator
 ```
 
-Klaro automatically adds `/opt/homebrew/bin`, `/usr/local/bin`, and other common paths to `PATH` at runtime so auth plugins are found even when launched from Xcode or Finder.
+Leme automatically adds `/opt/homebrew/bin`, `/usr/local/bin`, and other common paths to `PATH` at runtime so auth plugins are found even when launched from Xcode or Finder.
 
 ## Keyboard shortcuts
 
@@ -264,7 +278,7 @@ Tips: single-click selects a row (that's what palette actions operate on); doubl
 - [x] Namespace management
 
 ### Planned
-- [ ] CI + release pipeline (GitHub Actions, DMG)
+- [x] CI + release pipeline (GitHub Actions; tag `v*` → ad-hoc-signed DMG on Releases)
 - [ ] App icon and screenshots
 - [ ] Code signing + notarization, Homebrew cask, Sparkle auto-update
 - [ ] Multi-window support

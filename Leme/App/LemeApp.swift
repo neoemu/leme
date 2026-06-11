@@ -4,7 +4,7 @@ import SwiftUI
 /// Shuts down active Kubernetes clients before the process exits so the
 /// underlying HTTPClients are released cleanly (their deinit asserts in debug
 /// when not shut down).
-final class KlaroAppDelegate: NSObject, NSApplicationDelegate {
+final class LemeAppDelegate: NSObject, NSApplicationDelegate {
     nonisolated(unsafe) static var clusterManager: ClusterManager?
     nonisolated(unsafe) static var portForwardManager: PortForwardManager?
 
@@ -25,8 +25,8 @@ final class KlaroAppDelegate: NSObject, NSApplicationDelegate {
 }
 
 @main
-struct KlaroApp: App {
-    @NSApplicationDelegateAdaptor(KlaroAppDelegate.self) private var appDelegate
+struct LemeApp: App {
+    @NSApplicationDelegateAdaptor(LemeAppDelegate.self) private var appDelegate
     @State private var appState = AppState()
     @State private var clusterViewModel: ClusterViewModel
     @State private var portForwardManager: PortForwardManager
@@ -37,11 +37,11 @@ struct KlaroApp: App {
         _settingsStore = State(initialValue: settings)
 
         let manager = ClusterManager()
-        KlaroAppDelegate.clusterManager = manager
+        LemeAppDelegate.clusterManager = manager
         _clusterViewModel = State(initialValue: ClusterViewModel(clusterManager: manager, settings: settings))
 
         let forwards = PortForwardManager()
-        KlaroAppDelegate.portForwardManager = forwards
+        LemeAppDelegate.portForwardManager = forwards
         _portForwardManager = State(initialValue: forwards)
     }
 

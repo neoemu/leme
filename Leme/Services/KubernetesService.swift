@@ -700,8 +700,8 @@ actor KubernetesService {
 
         let fileManager = FileManager.default
         let tempDirectory = fileManager.temporaryDirectory
-        let stdoutURL = tempDirectory.appendingPathComponent("klaro-kubectl-stdout-\(UUID().uuidString).tmp")
-        let stderrURL = tempDirectory.appendingPathComponent("klaro-kubectl-stderr-\(UUID().uuidString).tmp")
+        let stdoutURL = tempDirectory.appendingPathComponent("leme-kubectl-stdout-\(UUID().uuidString).tmp")
+        let stderrURL = tempDirectory.appendingPathComponent("leme-kubectl-stderr-\(UUID().uuidString).tmp")
 
         guard fileManager.createFile(atPath: stdoutURL.path, contents: nil),
               fileManager.createFile(atPath: stderrURL.path, contents: nil),

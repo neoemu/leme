@@ -1,6 +1,6 @@
-name: Klaro
+name: Leme
 options:
-  bundleIdPrefix: com.klaro
+  bundleIdPrefix: com.leme
   deploymentTarget:
     macOS: "26.0"
   xcodeVersion: "16.0"
@@ -30,16 +30,32 @@ packages:
     url: https://github.com/ZeeZide/CodeEditor.git
     from: "1.2.6"
 
+# Shared scheme so xcodebuild works on clean checkouts (CI): without it the
+# scheme only exists in local xcuserdata created by the Xcode GUI.
+schemes:
+  Leme:
+    build:
+      targets:
+        Leme: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - LemeTests
+    archive:
+      config: Release
+
 targets:
-  Klaro:
+  Leme:
     type: application
     platform: macOS
     sources:
-      - path: Klaro
+      - path: Leme
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.klaro.app
-        PRODUCT_NAME: Klaro
+        PRODUCT_BUNDLE_IDENTIFIER: com.leme.app
+        PRODUCT_NAME: Leme
         INFOPLIST_GENERATION_MODE: GeneratedFile
         GENERATE_INFOPLIST_FILE: YES
         CURRENT_PROJECT_VERSION: 1
@@ -54,32 +70,32 @@ targets:
       - package: SwiftTerm
       - package: CodeEditor
     entitlements:
-      path: Klaro/Klaro.entitlements
+      path: Leme/Leme.entitlements
       properties:
         com.apple.security.app-sandbox: false
         com.apple.security.network.client: true
         com.apple.security.files.user-selected.read-write: true
 
-  KlaroTests:
+  LemeTests:
     type: bundle.unit-test
     platform: macOS
     sources:
-      - path: KlaroTests
+      - path: LemeTests
     dependencies:
-      - target: Klaro
+      - target: Leme
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.klaro.tests
+        PRODUCT_BUNDLE_IDENTIFIER: com.leme.tests
         GENERATE_INFOPLIST_FILE: YES
 
-  KlaroUITests:
+  LemeUITests:
     type: bundle.ui-testing
     platform: macOS
     sources:
-      - path: KlaroUITests
+      - path: LemeUITests
     dependencies:
-      - target: Klaro
+      - target: Leme
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.klaro.uitests
+        PRODUCT_BUNDLE_IDENTIFIER: com.leme.uitests
         GENERATE_INFOPLIST_FILE: YES

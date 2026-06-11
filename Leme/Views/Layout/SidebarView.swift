@@ -123,7 +123,7 @@ struct SidebarView: View {
             .opacity(appState.activeCluster != nil ? 1.0 : 0.45)
             .allowsHitTesting(appState.activeCluster != nil)
         }
-        .navigationTitle("Klaro")
+        .navigationTitle("Leme")
         .foregroundStyle(Theme.Colors.sidebarText)
         .background(Theme.Colors.sidebarBackground)
         .onAppear {

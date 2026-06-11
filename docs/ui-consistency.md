@@ -1,6 +1,6 @@
 # UI Consistency Guardrails
 
-This document preserves the current interaction and visual consistency baseline for Klaro's sidebar and resource lists.
+This document preserves the current interaction and visual consistency baseline for Leme's sidebar and resource lists.
 
 ## Goals
 - Keep navigation and tables consistent across all sections.
@@ -51,7 +51,7 @@ Run this checklist after sidebar/table changes:
 8. Counts and refresh behavior in sidebar remain responsive.
 
 ## Current Source of Truth Files
-- `Klaro/Views/Shared/ResourceTableView.swift`
-- `Klaro/Views/Layout/SidebarView.swift`
-- `Klaro/Views/Layout/ContentAreaView.swift`
-- `Klaro/App/Theme.swift`
+- `Leme/Views/Shared/ResourceTableView.swift`
+- `Leme/Views/Layout/SidebarView.swift`
+- `Leme/Views/Layout/ContentAreaView.swift`
+- `Leme/App/Theme.swift`
