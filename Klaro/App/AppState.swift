@@ -51,6 +51,7 @@ enum SidebarSelection: Hashable, Sendable {
     case resource(ResourceKind)
     case customResource(CustomResourceNavigationTarget)
     case helmReleases
+    case problems
     case placeholder(SidebarPlaceholder)
 }
 

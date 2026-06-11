@@ -26,6 +26,9 @@ struct ContentAreaView: View {
             case .helmReleases:
                 HelmReleaseListView()
                     .transition(.opacity)
+            case .problems:
+                ProblemsView()
+                    .transition(.opacity)
             case .placeholder(let page):
                 SidebarPlaceholderView(page: page)
                     .transition(.opacity)

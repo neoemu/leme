@@ -1,4 +1,5 @@
 import Foundation
+import SwiftkubeModel
 import Testing
 @testable import Klaro
 
@@ -141,6 +142,120 @@ import Testing
     let parsed = HelmTimestampParser.parse("2026-05-09 12:00:00 -0300 -03")
     let reference = ISO8601DateFormatter().date(from: "2026-05-09T15:00:00Z")
     #expect(parsed == reference)
+}
+
+@Test func podCrashLoopDetection() {
+    var pod = core.v1.Pod(metadata: meta.v1.ObjectMeta(name: "api-1", namespace: "prod"))
+    pod.status = core.v1.PodStatus(
+        containerStatuses: [
+            core.v1.ContainerStatus(
+                image: "img",
+                imageID: "",
+                name: "app",
+                ready: false,
+                restartCount: 7,
+                state: core.v1.ContainerState(
+                    waiting: core.v1.ContainerStateWaiting(message: "back-off 5m0s", reason: "CrashLoopBackOff")
+                )
+            ),
+        ],
+        phase: "Running"
+    )
+
+    let problems = ProblemsViewModel.problems(fromPod: pod)
+    #expect(problems.count == 1)
+    #expect(problems[0].severity == .critical)
+    #expect(problems[0].title == "CrashLoopBackOff")
+    #expect(problems[0].eventKey == "Pod/prod/api-1")
+}
+
+@Test func healthyAndTerminatingPodsAreIgnored() {
+    var healthy = core.v1.Pod(metadata: meta.v1.ObjectMeta(name: "ok", namespace: "prod"))
+    healthy.status = core.v1.PodStatus(
+        conditions: [core.v1.PodCondition(status: "True", type: "Ready")],
+        phase: "Running"
+    )
+    #expect(ProblemsViewModel.problems(fromPod: healthy).isEmpty)
+
+    var terminating = core.v1.Pod(
+        metadata: meta.v1.ObjectMeta(deletionTimestamp: Date(), name: "bye", namespace: "prod")
+    )
+    terminating.status = core.v1.PodStatus(phase: "Pending")
+    #expect(ProblemsViewModel.problems(fromPod: terminating).isEmpty)
+}
+
+@Test func nodeProblemDetection() {
+    let node = core.v1.Node(
+        metadata: meta.v1.ObjectMeta(name: "node-a"),
+        status: core.v1.NodeStatus(conditions: [
+            core.v1.NodeCondition(message: "kubelet stopped posting node status", status: "Unknown", type: "Ready"),
+            core.v1.NodeCondition(status: "True", type: "DiskPressure"),
+        ])
+    )
+
+    let problems = ProblemsViewModel.problems(fromNode: node)
+    #expect(problems.count == 2)
+    #expect(problems[0].title == "NotReady")
+    #expect(problems[0].severity == .critical)
+    #expect(problems[1].title == "DiskPressure")
+    #expect(problems[1].severity == .warning)
+}
+
+@Test func deploymentDegradationDetection() {
+    var deployment = apps.v1.Deployment(metadata: meta.v1.ObjectMeta(name: "web", namespace: "prod"))
+    deployment.spec = apps.v1.DeploymentSpec(
+        replicas: 3,
+        selector: meta.v1.LabelSelector(),
+        template: core.v1.PodTemplateSpec()
+    )
+    deployment.status = apps.v1.DeploymentStatus(readyReplicas: 1)
+
+    let degraded = ProblemsViewModel.problems(fromDeployment: deployment)
+    #expect(degraded.count == 1)
+    #expect(degraded[0].title == "Degraded")
+    #expect(degraded[0].severity == .warning)
+    #expect(degraded[0].detail.contains("1/3"))
+
+    deployment.status = apps.v1.DeploymentStatus(readyReplicas: 0)
+    let unavailable = ProblemsViewModel.problems(fromDeployment: deployment)
+    #expect(unavailable[0].severity == .critical)
+
+    // Intentionally scaled to zero is not a problem
+    deployment.spec?.replicas = 0
+    #expect(ProblemsViewModel.problems(fromDeployment: deployment).isEmpty)
+}
+
+@Test func pvcProblemDetection() {
+    var pvc = core.v1.PersistentVolumeClaim(metadata: meta.v1.ObjectMeta(name: "data", namespace: "db"))
+    pvc.status = core.v1.PersistentVolumeClaimStatus(phase: "Pending")
+    let problems = ProblemsViewModel.problems(fromPVC: pvc)
+    #expect(problems.count == 1)
+    #expect(problems[0].severity == .warning)
+
+    pvc.status = core.v1.PersistentVolumeClaimStatus(phase: "Bound")
+    #expect(ProblemsViewModel.problems(fromPVC: pvc).isEmpty)
+}
+
+@Test func warningEventCorrelation() {
+    let event = core.v1.Event(
+        metadata: meta.v1.ObjectMeta(name: "evt-1"),
+        count: 12,
+        involvedObject: core.v1.ObjectReference(kind: "Pod", name: "api-1", namespace: "prod"),
+        message: "Back-off restarting failed container",
+        reason: "BackOff",
+        type: "Warning"
+    )
+    let normal = core.v1.Event(
+        metadata: meta.v1.ObjectMeta(name: "evt-2"),
+        involvedObject: core.v1.ObjectReference(kind: "Pod", name: "api-1", namespace: "prod"),
+        reason: "Scheduled",
+        type: "Normal"
+    )
+
+    let map = ProblemsViewModel.warningEvents(from: [event, normal])
+    #expect(map["Pod/prod/api-1"]?.count == 1)
+    #expect(map["Pod/prod/api-1"]?.first?.reason == "BackOff")
+    #expect(map["Pod/prod/api-1"]?.first?.count == 12)
 }
 
 @Test func kubernetesErrorClassificationByError() {

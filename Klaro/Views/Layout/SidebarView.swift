@@ -48,6 +48,7 @@ struct SidebarView: View {
             ScrollView {
                 VStack(spacing: 0) {
                     sidebarSection(title: "Cluster", id: "cluster") {
+                        row(title: "Problems", icon: "stethoscope", selection: .problems)
                         row(title: "Projects/Namespaces", icon: "square.split.2x1", selection: .placeholder(.projectsNamespaces))
                         row(title: ResourceKind.node.pluralName, icon: ResourceKind.node.icon, selection: .resource(.node), countKind: .node)
                         row(title: "Cluster and Project Members", icon: "person.3", selection: .placeholder(.clusterMembers))
