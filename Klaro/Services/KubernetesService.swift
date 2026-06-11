@@ -254,6 +254,11 @@ actor KubernetesService {
         try await scopedClient.delete(name: name)
     }
 
+    func createNamespace(name: String) async throws {
+        let namespace = core.v1.Namespace(metadata: meta.v1.ObjectMeta(name: name))
+        _ = try await client.clusterScoped(for: core.v1.Namespace.self).create(namespace)
+    }
+
     // MARK: - Custom Resource Operations
 
     func listCustomResourceDefinitions(context: String? = nil) async throws -> [CustomResourceDefinitionInfo] {

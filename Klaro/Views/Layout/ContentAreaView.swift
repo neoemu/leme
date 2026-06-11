@@ -131,12 +131,7 @@ struct ContentAreaView: View {
         case .node:
             NodeListView()
         case .namespace:
-            EmptyStateView(
-                icon: ResourceKind.namespace.icon,
-                title: "Namespaces",
-                message: "Namespace management is not yet available.",
-                secondaryMessage: "Use the namespace filter in the sidebar to switch namespaces."
-            )
+            NamespaceListView()
         // Network
         case .service:
             ServiceListView()
