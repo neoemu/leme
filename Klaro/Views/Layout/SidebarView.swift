@@ -10,6 +10,8 @@ struct SidebarView: View {
     @State private var kindCounts: [ResourceKind: Int] = [:]
     @State private var crdDefinitionsByGroup: [String: [CustomResourceDefinitionInfo]] = [:]
     @State private var crdCounts: [String: Int] = [:]
+    @State private var problemsCount = 0
+    @State private var problemsCriticalCount = 0
     @State private var isRefreshing = false
     @State private var isManualRefreshInProgress = false
     @State private var refreshTask: Task<Void, Never>?
@@ -48,12 +50,15 @@ struct SidebarView: View {
             ScrollView {
                 VStack(spacing: 0) {
                     sidebarSection(title: "Cluster", id: "cluster") {
-                        row(title: "Problems", icon: "stethoscope", selection: .problems)
-                        row(title: "Projects/Namespaces", icon: "square.split.2x1", selection: .placeholder(.projectsNamespaces))
+                        row(
+                            title: "Problems",
+                            icon: "stethoscope",
+                            selection: .problems,
+                            countOverride: problemsCount > 0 ? problemsCount : nil,
+                            countColor: problemsCriticalCount > 0 ? Theme.Colors.failed : Theme.Colors.warning
+                        )
                         row(title: ResourceKind.node.pluralName, icon: ResourceKind.node.icon, selection: .resource(.node), countKind: .node)
-                        row(title: "Cluster and Project Members", icon: "person.3", selection: .placeholder(.clusterMembers))
                         row(title: ResourceKind.event.pluralName, icon: ResourceKind.event.icon, selection: .resource(.event), countKind: .event)
-                        row(title: "Tools", icon: "wrench.and.screwdriver", selection: .placeholder(.tools))
                     }
 
                     sidebarSection(title: "Workloads", id: "workloads") {
@@ -67,10 +72,7 @@ struct SidebarView: View {
                     }
 
                     sidebarSection(title: "Apps", id: "apps") {
-                        row(title: "Charts", icon: "shippingbox", selection: .placeholder(.charts))
                         row(title: "Installed Apps", icon: "square.stack.3d.up", selection: .helmReleases)
-                        row(title: "Repositories", icon: "books.vertical", selection: .placeholder(.repositories))
-                        row(title: "Recent Operations", icon: "clock.arrow.circlepath", selection: .placeholder(.recentOperations))
                     }
 
                     sidebarSection(title: "Service Discovery", id: "service-discovery") {
@@ -234,13 +236,15 @@ struct SidebarView: View {
         icon: String,
         selection: SidebarSelection,
         countKind: ResourceKind? = nil,
-        countOverride: Int? = nil
+        countOverride: Int? = nil,
+        countColor: Color? = nil
     ) -> some View {
         SidebarItemRow(
             title: title,
             icon: icon,
             isSelected: appState.sidebarSelection == selection,
-            count: countOverride ?? (countKind.flatMap { kindCounts[$0] })
+            count: countOverride ?? (countKind.flatMap { kindCounts[$0] }),
+            countColor: countColor
         ) {
             appState.sidebarSelection = selection
         }
@@ -353,6 +357,8 @@ struct SidebarView: View {
             kindCounts = [:]
             crdDefinitionsByGroup = [:]
             crdCounts = [:]
+            problemsCount = 0
+            problemsCriticalCount = 0
             return
         }
 
@@ -388,6 +394,10 @@ struct SidebarView: View {
             }
         }
         kindCounts = loadedCounts
+
+        let problems = await Self.scanProblems(service: service, namespace: namespace)
+        problemsCount = problems.total
+        problemsCriticalCount = problems.critical
 
         let definitions: [CustomResourceDefinitionInfo]
         do {
@@ -431,6 +441,7 @@ struct SidebarView: View {
         let icon: String
         let isSelected: Bool
         let count: Int?
+        var countColor: Color?
         let action: () -> Void
 
         @State private var isHovering = false
@@ -454,7 +465,7 @@ struct SidebarView: View {
                     if let count {
                         Text("\(count)")
                             .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .foregroundStyle(Theme.Colors.sidebarMutedText.opacity(0.8))
+                            .foregroundStyle(countColor ?? Theme.Colors.sidebarMutedText.opacity(0.8))
                     }
                 }
                 .padding(.horizontal, Theme.Dimensions.smallSpacing + 2)
@@ -474,6 +485,33 @@ struct SidebarView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .onHover { isHovering = $0 }
         }
+    }
+
+    /// Lightweight problem scan backing the sidebar badge; the Problems view
+    /// owns the detailed presentation.
+    private nonisolated static func scanProblems(
+        service: KubernetesService,
+        namespace: String?
+    ) async -> (total: Int, critical: Int) {
+        async let pods = try? service.list(core.v1.Pod.self, in: namespace)
+        async let deployments = try? service.list(apps.v1.Deployment.self, in: namespace)
+        async let statefulSets = try? service.list(apps.v1.StatefulSet.self, in: namespace)
+        async let daemonSets = try? service.list(apps.v1.DaemonSet.self, in: namespace)
+        async let jobs = try? service.list(batch.v1.Job.self, in: namespace)
+        async let pvcs = try? service.list(core.v1.PersistentVolumeClaim.self, in: namespace)
+        async let nodes = try? service.listClusterScoped(core.v1.Node.self)
+
+        var items: [ProblemItem] = []
+        if let list = await pods { items += list.items.flatMap(ProblemsViewModel.problems(fromPod:)) }
+        if let list = await deployments { items += list.items.flatMap(ProblemsViewModel.problems(fromDeployment:)) }
+        if let list = await statefulSets { items += list.items.flatMap(ProblemsViewModel.problems(fromStatefulSet:)) }
+        if let list = await daemonSets { items += list.items.flatMap(ProblemsViewModel.problems(fromDaemonSet:)) }
+        if let list = await jobs { items += list.items.flatMap(ProblemsViewModel.problems(fromJob:)) }
+        if let list = await pvcs { items += list.items.flatMap(ProblemsViewModel.problems(fromPVC:)) }
+        if let list = await nodes { items += list.items.flatMap(ProblemsViewModel.problems(fromNode:)) }
+
+        let critical = items.lazy.filter { $0.severity == .critical }.count
+        return (items.count, critical)
     }
 
     private func countFor(kind: ResourceKind, service: KubernetesService, namespace: String?) async -> Int? {

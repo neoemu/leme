@@ -1,12 +1,7 @@
 import SwiftUI
 
 enum SidebarPlaceholder: String, Hashable, Sendable {
-    case projectsNamespaces
-    case clusterMembers
-    case tools
-    case charts
-    case repositories
-    case recentOperations
+    /// Landing page for the More Resources section (command palette target).
     case moreResources
 }
 

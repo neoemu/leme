@@ -31,7 +31,7 @@ struct GlobalSearchView: View {
             isSearchFieldFocused = true
             Task {
                 guard let client = try? await clusterViewModel.clientForActiveCluster(appState: appState) else { return }
-                await viewModel.loadIndex(client: client)
+                await viewModel.loadIndex(client: client, contextName: appState.activeCluster?.contextName)
             }
         }
         .onDisappear {
@@ -120,7 +120,7 @@ struct GlobalSearchView: View {
 
     private func resultRow(_ result: GlobalSearchResult, isSelected: Bool) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: result.kind.icon)
+            Image(systemName: result.iconName)
                 .frame(width: 20)
                 .foregroundStyle(isSelected ? .white : Theme.Colors.secondaryText)
                 .font(.system(size: 13))
@@ -140,7 +140,7 @@ struct GlobalSearchView: View {
                     .lineLimit(1)
             }
 
-            Text(result.kind.rawValue)
+            Text(result.kindLabel)
                 .font(Theme.Fonts.caption)
                 .foregroundStyle(isSelected ? .white.opacity(0.7) : Theme.Colors.tertiaryText)
                 .padding(.horizontal, 6)
@@ -182,9 +182,17 @@ struct GlobalSearchView: View {
         guard viewModel.selectedIndex >= 0, viewModel.selectedIndex < results.count else { return }
         let result = results[viewModel.selectedIndex]
 
-        appState.selectedNamespace = result.namespace
-        appState.sidebarSelection = .resource(result.kind)
-        appState.showResourceDetail(result.resourceID)
+        if result.isHelmRelease {
+            // Helm releases live in Installed Apps; select the row there
+            // (release details open from that view, not the inspector).
+            appState.selectedNamespace = result.namespace
+            appState.sidebarSelection = .helmReleases
+            appState.selectResource(result.resourceID)
+        } else {
+            appState.selectedNamespace = result.namespace
+            appState.sidebarSelection = .resource(result.kind)
+            appState.showResourceDetail(result.resourceID)
+        }
         dismiss()
     }
 

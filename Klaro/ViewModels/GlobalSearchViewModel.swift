@@ -6,12 +6,23 @@ struct GlobalSearchResult: Identifiable, Sendable, Hashable {
     let kind: ResourceKind
     let name: String
     let namespace: String?
+    /// Helm releases aren't Kubernetes resources; they navigate to the
+    /// Installed Apps view instead of a resource table.
+    var isHelmRelease: Bool = false
 
-    var id: String { "\(kind.rawValue)|\(resourceID)" }
+    var id: String { "\(isHelmRelease ? "HelmRelease" : kind.rawValue)|\(resourceID)" }
 
     /// Matches the id convention used by the resource tables ("ns/name" or "name").
     var resourceID: String {
         namespace.map { "\($0)/\(name)" } ?? name
+    }
+
+    var iconName: String {
+        isHelmRelease ? "square.stack.3d.up" : kind.icon
+    }
+
+    var kindLabel: String {
+        isHelmRelease ? "Helm Release" : kind.rawValue
     }
 }
 
@@ -51,7 +62,7 @@ final class GlobalSearchViewModel {
 
     /// Builds the search index by listing the main resource kinds across all
     /// namespaces. Called once when the search overlay opens.
-    func loadIndex(client: KubernetesClient) async {
+    func loadIndex(client: KubernetesClient, contextName: String?) async {
         isLoading = true
         defer { isLoading = false }
 
@@ -72,6 +83,7 @@ final class GlobalSearchViewModel {
         async let pvcs = Self.namespacedEntries(core.v1.PersistentVolumeClaim.self, kind: .persistentVolumeClaim, service: service)
         async let nodes = Self.clusterScopedEntries(core.v1.Node.self, kind: .node, service: service)
         async let namespaces = Self.clusterScopedEntries(core.v1.Namespace.self, kind: .namespace, service: service)
+        async let helmReleases = Self.helmEntries(contextName: contextName)
 
         entries += await pods
         entries += await deployments
@@ -86,6 +98,7 @@ final class GlobalSearchViewModel {
         entries += await pvcs
         entries += await nodes
         entries += await namespaces
+        entries += await helmReleases
 
         allEntries = entries
     }
@@ -131,6 +144,20 @@ final class GlobalSearchViewModel {
         return list.items.compactMap { item in
             guard let name = item.name else { return nil }
             return GlobalSearchResult(kind: kind, name: name, namespace: nil)
+        }
+    }
+
+    private nonisolated static func helmEntries(contextName: String?) async -> [GlobalSearchResult] {
+        let helmService = HelmService(contextName: contextName)
+        guard let releases = try? await helmService.listReleases(namespace: nil) else { return [] }
+        return releases.map { release in
+            // `kind` is unused for helm rows; see isHelmRelease.
+            GlobalSearchResult(
+                kind: .endpoint,
+                name: release.name,
+                namespace: release.namespace,
+                isHelmRelease: true
+            )
         }
     }
 

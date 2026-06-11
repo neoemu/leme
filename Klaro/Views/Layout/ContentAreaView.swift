@@ -191,33 +191,6 @@ private struct SidebarPlaceholderView: View {
 
     private var metadata: (icon: String, title: String, message: String, secondary: String?) {
         switch page {
-        case .projectsNamespaces:
-            return (
-                "square.split.2x1",
-                "Projects/Namespaces",
-                "Project-style namespace management is not available yet.",
-                "Use the namespace filter in the sidebar to scope namespaced resources."
-            )
-        case .clusterMembers:
-            return (
-                "person.3",
-                "Cluster and Project Members",
-                "Member management is not implemented yet.",
-                "RBAC resources are available under More Resources."
-            )
-        case .tools:
-            return (
-                "wrench.and.screwdriver",
-                "Tools",
-                "Built-in tools are not implemented yet.",
-                "Use the command palette and bottom panel for logs and terminal workflows."
-            )
-        case .charts:
-            return ("shippingbox", "Charts", "Chart catalog is not implemented yet.", nil)
-        case .repositories:
-            return ("books.vertical", "Repositories", "Repository management is not implemented yet.", nil)
-        case .recentOperations:
-            return ("clock.arrow.circlepath", "Recent Operations", "Operation history is not implemented yet.", nil)
         case .moreResources:
             return (
                 "square.grid.3x3",
