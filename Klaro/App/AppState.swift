@@ -5,7 +5,6 @@ enum SidebarPlaceholder: String, Hashable, Sendable {
     case clusterMembers
     case tools
     case charts
-    case installedApps
     case repositories
     case recentOperations
     case moreResources
@@ -51,6 +50,7 @@ struct CustomResourceNavigationTarget: Hashable, Sendable {
 enum SidebarSelection: Hashable, Sendable {
     case resource(ResourceKind)
     case customResource(CustomResourceNavigationTarget)
+    case helmReleases
     case placeholder(SidebarPlaceholder)
 }
 

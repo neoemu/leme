@@ -23,6 +23,9 @@ struct ContentAreaView: View {
                 SelectedCustomResourceListView(target: target)
                     .id(target.id)
                     .transition(.opacity)
+            case .helmReleases:
+                HelmReleaseListView()
+                    .transition(.opacity)
             case .placeholder(let page):
                 SidebarPlaceholderView(page: page)
                     .transition(.opacity)
@@ -208,8 +211,6 @@ private struct SidebarPlaceholderView: View {
             )
         case .charts:
             return ("shippingbox", "Charts", "Chart catalog is not implemented yet.", nil)
-        case .installedApps:
-            return ("square.stack.3d.up", "Installed Apps", "Helm app management is not implemented yet.", nil)
         case .repositories:
             return ("books.vertical", "Repositories", "Repository management is not implemented yet.", nil)
         case .recentOperations:

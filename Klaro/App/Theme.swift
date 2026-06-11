@@ -46,15 +46,16 @@ enum Theme {
 
         static func forStatus(_ status: String) -> Color {
             switch status.lowercased() {
-            case "running", "active", "bound", "ready", "available":
+            case "running", "active", "bound", "ready", "available", "deployed":
                 return running
-            case "pending", "containercreating", "waiting":
+            case "pending", "containercreating", "waiting",
+                 "pending-install", "pending-upgrade", "pending-rollback":
                 return pending
             case "failed", "error", "crashloopbackoff", "imagepullbackoff", "evicted":
                 return failed
             case "succeeded", "completed":
                 return succeeded
-            case "terminated", "terminating":
+            case "terminated", "terminating", "superseded", "uninstalling", "uninstalled":
                 return terminated
             case "warning":
                 return warning

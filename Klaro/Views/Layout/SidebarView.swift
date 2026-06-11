@@ -67,7 +67,7 @@ struct SidebarView: View {
 
                     sidebarSection(title: "Apps", id: "apps") {
                         row(title: "Charts", icon: "shippingbox", selection: .placeholder(.charts))
-                        row(title: "Installed Apps", icon: "square.stack.3d.up", selection: .placeholder(.installedApps))
+                        row(title: "Installed Apps", icon: "square.stack.3d.up", selection: .helmReleases)
                         row(title: "Repositories", icon: "books.vertical", selection: .placeholder(.repositories))
                         row(title: "Recent Operations", icon: "clock.arrow.circlepath", selection: .placeholder(.recentOperations))
                     }

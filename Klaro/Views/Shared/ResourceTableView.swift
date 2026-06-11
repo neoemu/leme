@@ -54,6 +54,9 @@ struct ResourceTableView: View {
     var onRestart: ((ResourceItem) -> Void)?
     var onDownloadYAML: ((ResourceItem) -> Void)?
     var extraActions: ((ResourceItem) -> [ResourceRowAction])?
+    /// Overrides the default "Details" behavior (inspector panel) for rows
+    /// that aren't plain Kubernetes resources (e.g. helm releases).
+    var onShowDetails: ((ResourceItem) -> Void)?
     var deleteConfirmationMessageBuilder: ((ResourceItem) -> String)? = nil
     /// Optional custom cell renderer. Return a view for custom rendering, or nil for default.
     var customCellRenderer: ((ResourceTableColumn, ResourceItem) -> AnyView?)?
@@ -621,7 +624,7 @@ struct ResourceTableView: View {
         .highPriorityGesture(
             TapGesture(count: 2)
                 .onEnded {
-                    appState.showResourceDetail(resource.id)
+                    showDetails(resource)
                 }
         )
         .simultaneousGesture(
@@ -632,7 +635,7 @@ struct ResourceTableView: View {
         )
         .contextMenu {
             Button {
-                appState.showResourceDetail(resource.id)
+                showDetails(resource)
             } label: {
                 Label("Details", systemImage: "info.circle")
             }
@@ -643,12 +646,20 @@ struct ResourceTableView: View {
         }
     }
 
+    private func showDetails(_ resource: ResourceItem) {
+        if let onShowDetails {
+            onShowDetails(resource)
+        } else {
+            appState.showResourceDetail(resource.id)
+        }
+    }
+
     // MARK: - Actions Menu Button ("...")
 
     private func actionsMenuButton(for resource: ResourceItem) -> some View {
         Menu {
             Button {
-                appState.showResourceDetail(resource.id)
+                showDetails(resource)
             } label: {
                 Label("Details", systemImage: "info.circle")
             }

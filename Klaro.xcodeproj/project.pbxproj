@@ -47,11 +47,13 @@
 		66E8AFF05CD4D86E61C0F6B4 /* PodListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24A5666EA472DD544B711E1C /* PodListView.swift */; };
 		69F6C0CDE5EC8FA8C558374C /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59FFB0F56E2A978126251663 /* AppState.swift */; };
 		6B6484844AB8B918A540BD77 /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE0726C7E394E3E272310B94 /* SettingsStore.swift */; };
+		6CD2BB3470785609E507201C /* HelmService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB452695B0DFF242C883DD48 /* HelmService.swift */; };
 		6D8653DEE54F6E6FE28FB174 /* EmptyStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D90EA29923E963F31614E96 /* EmptyStateView.swift */; };
 		6E0D0D0458A42AB6FBF354CF /* BottomPanelMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01291E58975E41D4C89DD1B6 /* BottomPanelMode.swift */; };
 		769EA51A3A2D14B7D4D09BCB /* ResourceWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = D228E35DB21CD5108775C47D /* ResourceWatcher.swift */; };
 		77616AAAFCA50BC66FC3B163 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85022A4B84A4272F7A17C1F5 /* Theme.swift */; };
 		77D95599CD5D015B5A60A906 /* ReplicaSetListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BD6FA5E13AE9CD64390EF65 /* ReplicaSetListView.swift */; };
+		7A50F95E5C2179FA73C69619 /* HelmReleaseDetailSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32D8BD476CEA9F78782B6123 /* HelmReleaseDetailSheet.swift */; };
 		7A9B1589BA362BE3E4494545 /* ClusterRoleBindingListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 422FC34F828A95DFA80BDD30 /* ClusterRoleBindingListView.swift */; };
 		7E3731C5815FFDF7D7BE486B /* TerminalContainerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DB301550D20811A42DE8304 /* TerminalContainerView.swift */; };
 		830398D393A84D171A945B8F /* LogViewerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7D3AC4DB90F3440AE29D692 /* LogViewerView.swift */; };
@@ -62,6 +64,7 @@
 		8EABBE167F17718A88B67843 /* LogStreamService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C6A80AB1BF018CA02D34CA8 /* LogStreamService.swift */; };
 		91B750F4C7746BA7EC4B3D98 /* KubernetesService.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABDFF55C6B6C2AF8C0A9DE9A /* KubernetesService.swift */; };
 		95CD10250F13F09CE57D7FFD /* ClusterDashboardViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FC739DF4B63586DF7A0148E /* ClusterDashboardViewModel.swift */; };
+		96B52F4977E8D78667D56F8E /* HelmRelease.swift in Sources */ = {isa = PBXBuildFile; fileRef = 889E0C738F331B6DDB397A21 /* HelmRelease.swift */; };
 		99C3177546D1DE9C371D93C9 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E5EA4B75A1D82ED12D36C4AA /* Assets.xcassets */; };
 		9CBFB1CC02E303C2D32A69BA /* JobListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA3D810F13E4AD29C3CAE392 /* JobListView.swift */; };
 		9DCFC9F5F4A586888E1D6E59 /* PodDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4140F1FF55C831B0DB23CC2 /* PodDetailView.swift */; };
@@ -75,6 +78,7 @@
 		B4D69F9C35A65C7BB69CE0D2 /* ClusterOverviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07FC1CE4F762DB792E521167 /* ClusterOverviewView.swift */; };
 		B55AE8C33FC1CE848C04FFC3 /* PVListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AED22A22F588707E6BABCBC7 /* PVListView.swift */; };
 		B9161EBDE6EC6711C953D938 /* ClusterViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D10616A01CFE17BC8B6EA25 /* ClusterViewModel.swift */; };
+		BE650175F8E50187EB9FC229 /* HelmReleaseListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C63732D4F53487F1146D3B97 /* HelmReleaseListView.swift */; };
 		C6C6D4C60A2FD870BED83622 /* KlaroTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70C4D1336B2B00EFB5434E7 /* KlaroTests.swift */; };
 		CCD2B0EA6A5B8D98623B464D /* ResourceCategory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B4B3F248BE29417423CACC3 /* ResourceCategory.swift */; };
 		D065CBD24477B571E8ED0AEA /* ClusterSwitcherView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 450B8457971C95902DAFC7BA /* ClusterSwitcherView.swift */; };
@@ -137,6 +141,7 @@
 		29C057233614C09882A99461 /* RoleBindingListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoleBindingListView.swift; sourceTree = "<group>"; };
 		2A6DFBDDD4FCCA980F0BA6CE /* MainLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainLayout.swift; sourceTree = "<group>"; };
 		2BE56E3029F9BDF65D3D9FDC /* ServiceListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceListView.swift; sourceTree = "<group>"; };
+		32D8BD476CEA9F78782B6123 /* HelmReleaseDetailSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelmReleaseDetailSheet.swift; sourceTree = "<group>"; };
 		36D600C301CE69DE3206C95A /* IngressListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IngressListView.swift; sourceTree = "<group>"; };
 		3F267A3D222C2E036ABA07C0 /* AgeLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgeLabel.swift; sourceTree = "<group>"; };
 		422FC34F828A95DFA80BDD30 /* ClusterRoleBindingListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClusterRoleBindingListView.swift; sourceTree = "<group>"; };
@@ -171,6 +176,7 @@
 		8354B23CBE82F439FFEB5F34 /* ResourceDetailViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResourceDetailViewModel.swift; sourceTree = "<group>"; };
 		85022A4B84A4272F7A17C1F5 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		869F4B1DE05B2193ED83C2AA /* KlaroTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KlaroTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		889E0C738F331B6DDB397A21 /* HelmRelease.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelmRelease.swift; sourceTree = "<group>"; };
 		898270F3BD1CB0682FA6104C /* InfoPill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InfoPill.swift; sourceTree = "<group>"; };
 		8B4BB9B03BC639C4D3994FF0 /* NodeListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeListView.swift; sourceTree = "<group>"; };
 		8C14C9863296BBD17128826E /* KlaroUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KlaroUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -180,6 +186,7 @@
 		9DB301550D20811A42DE8304 /* TerminalContainerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalContainerView.swift; sourceTree = "<group>"; };
 		A2D344C77C64DF23906E4314 /* StatefulSetListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatefulSetListView.swift; sourceTree = "<group>"; };
 		A70C4D1336B2B00EFB5434E7 /* KlaroTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KlaroTests.swift; sourceTree = "<group>"; };
+		AB452695B0DFF242C883DD48 /* HelmService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelmService.swift; sourceTree = "<group>"; };
 		ABDFF55C6B6C2AF8C0A9DE9A /* KubernetesService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KubernetesService.swift; sourceTree = "<group>"; };
 		ACB1786F46D9857ACFB57428 /* CapacityBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CapacityBar.swift; sourceTree = "<group>"; };
 		AED22A22F588707E6BABCBC7 /* PVListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PVListView.swift; sourceTree = "<group>"; };
@@ -189,6 +196,7 @@
 		B56FB03B6822D99EC59D81B9 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		B6F5D0789ED78B3A27B06129 /* StorageClassListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageClassListView.swift; sourceTree = "<group>"; };
 		BA45744F7D29C8CF1DA6B907 /* KubeconfigWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KubeconfigWatcher.swift; sourceTree = "<group>"; };
+		C63732D4F53487F1146D3B97 /* HelmReleaseListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelmReleaseListView.swift; sourceTree = "<group>"; };
 		CBB9954C98141BAAEAA37862 /* BottomPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomPanelView.swift; sourceTree = "<group>"; };
 		CE85CE982D0E2AFAC9101877 /* KlaroUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KlaroUITests.swift; sourceTree = "<group>"; };
 		D06D982F1414C38249A2CC1E /* CommandPaletteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandPaletteView.swift; sourceTree = "<group>"; };
@@ -246,6 +254,15 @@
 				E7915D0C1902A35BF8F0E109 /* Extensions */,
 			);
 			path = Utilities;
+			sourceTree = "<group>";
+		};
+		4B369A6FB0C5E2B946250A8F /* Helm */ = {
+			isa = PBXGroup;
+			children = (
+				32D8BD476CEA9F78782B6123 /* HelmReleaseDetailSheet.swift */,
+				C63732D4F53487F1146D3B97 /* HelmReleaseListView.swift */,
+			);
+			path = Helm;
 			sourceTree = "<group>";
 		};
 		4DAC52E1C0E1E655A78123C0 /* KlaroUITests */ = {
@@ -319,6 +336,7 @@
 			children = (
 				EB85376BBCFAABB821772ACC /* ClusterManager.swift */,
 				5466252AE0DB6AD9415B8039 /* ExecService.swift */,
+				AB452695B0DFF242C883DD48 /* HelmService.swift */,
 				BA45744F7D29C8CF1DA6B907 /* KubeconfigWatcher.swift */,
 				ABDFF55C6B6C2AF8C0A9DE9A /* KubernetesService.swift */,
 				5C6A80AB1BF018CA02D34CA8 /* LogStreamService.swift */,
@@ -387,6 +405,7 @@
 			children = (
 				01291E58975E41D4C89DD1B6 /* BottomPanelMode.swift */,
 				081C539B73F507BE4FC463A6 /* ClusterConnection.swift */,
+				889E0C738F331B6DDB397A21 /* HelmRelease.swift */,
 				7B4B3F248BE29417423CACC3 /* ResourceCategory.swift */,
 				489D6D801DEABA8BDEA173CA /* ResourceKind.swift */,
 			);
@@ -434,6 +453,7 @@
 				7C8AF0B876E57799FDE73056 /* Cluster */,
 				A80A839911C6163F46DED91B /* Configuration */,
 				98A32C83618AC6C07FA4E75B /* Events */,
+				4B369A6FB0C5E2B946250A8F /* Helm */,
 				90B78F07BB9AEF7AC9E1B2E0 /* Layout */,
 				8B3DEB8EFA4BB66CF848CE17 /* Network */,
 				60F40CD9A34CAE2F099E1BC0 /* Settings */,
@@ -672,6 +692,10 @@
 				2988F6C4D0A7812F9D2DC117 /* ExecService.swift in Sources */,
 				09D838A67105C163A00E1E4C /* GlobalSearchView.swift in Sources */,
 				3AAA5644008572DF4303B1A6 /* GlobalSearchViewModel.swift in Sources */,
+				96B52F4977E8D78667D56F8E /* HelmRelease.swift in Sources */,
+				7A50F95E5C2179FA73C69619 /* HelmReleaseDetailSheet.swift in Sources */,
+				BE650175F8E50187EB9FC229 /* HelmReleaseListView.swift in Sources */,
+				6CD2BB3470785609E507201C /* HelmService.swift in Sources */,
 				EE4862D1AE436866BE7DE023 /* InfoPill.swift in Sources */,
 				E1FC37C5106338F805CCC794 /* IngressListView.swift in Sources */,
 				FC2DEBABA2896A5031B5A3E2 /* InspectorDetailView.swift in Sources */,
